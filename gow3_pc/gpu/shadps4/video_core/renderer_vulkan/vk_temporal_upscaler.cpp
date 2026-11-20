@@ -81,6 +81,22 @@ struct DumpImage {
     vk::ImageAspectFlagBits aspect = vk::ImageAspectFlagBits::eColor;
 };
 
+/// gow3 20 Nov 2026: the dump's name for the output-size UI image's 4-byte format ("final": every
+/// upscaler's result as the HUD is drawn over it, to compare them in one format).
+const char* UiDumpFormat(vk::Format format) {
+    switch (format) {
+    case vk::Format::eB8G8R8A8Unorm:
+    case vk::Format::eB8G8R8A8Srgb:
+        return "bgra8";
+    case vk::Format::eA2B10G10R10UnormPack32:
+        return "a2b10g10r10";
+    case vk::Format::eA2R10G10B10UnormPack32:
+        return "a2r10g10b10";
+    default:
+        return "rgba8";
+    }
+}
+
 /// Copies `images` into host buffers after the commands recorded so far and writes them to
 /// files once the GPU is done.
 void DumpImages(const Instance& instance, Scheduler& scheduler, vk::CommandBuffer cmdbuf,
@@ -1826,7 +1842,8 @@ void TemporalUpscaler::RunScaled() {
                 DumpImages(instance, scheduler, cmdbuf, dump,
                            {{color_image, source_width, source_height, 4, "input", "rgba"},
                             {vk::Image(motion_image), w, h, 4, "motion", "rg16f"},
-                            {vk::Image(output_image), tw, th, 8, "output", "rgba16f"}});
+                            {vk::Image(output_image), tw, th, 8, "output", "rgba16f"},
+                            {vk::Image(ui_image), ow, oh, 4, "final", UiDumpFormat(ui_format)}});
                 DumpImages(instance, scheduler, cmdbuf, dump,
                            {{depth_image, source_width, source_height, 4, "depth", "f32",
                              vk::ImageAspectFlagBits::eDepth}});
@@ -1918,7 +1935,8 @@ void TemporalUpscaler::RunScaled() {
         if (const int dump = DumpFrame(); dump >= 0 && camera_motion.VelocityMode()) {
             DumpImages(instance, scheduler, cmdbuf, dump,
                        {{color_image, source_width, source_height, 4, "input", "rgba"},
-                        {vk::Image(motion_image), w, h, 4, "motion", "rg16f"}});
+                        {vk::Image(motion_image), w, h, 4, "motion", "rg16f"},
+                        {vk::Image(ui_image), ow, oh, 4, "final", UiDumpFormat(ui_format)}});
             DumpImages(instance, scheduler, cmdbuf, dump,
                        {{depth_image, source_width, source_height, 4, "depth", "f32",
                          vk::ImageAspectFlagBits::eDepth}});
