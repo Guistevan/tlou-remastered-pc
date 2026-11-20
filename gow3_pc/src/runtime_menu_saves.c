@@ -124,7 +124,9 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
             gow3gpu_preview_show(-1);
             return;
         }
-        show_preview(on_top);
+        /* The menu's state (menu+8): 0xc while it is on screen; Start closes it (5, then 0 while
+         * the game runs, our page staying on top of its stack) and opens it again (3, then 0xc). */
+        show_preview(on_top && gow3_menu_u32((const unsigned char *)menu + GOW3_MENU_STATE) == GOW3_MENU_STATE_SHOWN);
     } else if (st == SETTLING) {
         gow3gpu_preview_show(-1);
         if (on_top) settle = 0;

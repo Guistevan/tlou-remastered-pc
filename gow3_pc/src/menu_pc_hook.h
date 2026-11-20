@@ -319,7 +319,8 @@ static const Gow3Signature gow3_menu_page_open = {
     "55 48 89 e5 41 57 41 56 41 55 41 54 53 48 81 ec e8 02 00 00 41 89 cd 41 89 d4 49 89 ff 31 c0 90", 0};
 static const Gow3Signature gow3_menu_page_back = {
     "55 48 89 e5 41 57 41 56 53 48 83 ec 58 48 89 fb 48 8b 4b 08 85 c9 74 6b c5 fa 10 83 54 0d 00 00", 0};
-enum { GOW3_MENU_PAGE_STACK = 0x878, GOW3_MENU_PAGE_TOP = 0xd28, GOW3_MENU_PAGE_STACK_SIZE = 32,
+enum { GOW3_MENU_STATE = 8, GOW3_MENU_STATE_SHOWN = 0xc,
+       GOW3_MENU_PAGE_STACK = 0x878, GOW3_MENU_PAGE_TOP = 0xd28, GOW3_MENU_PAGE_STACK_SIZE = 32,
        GOW3_MENU_PAGE_OBJECT_HASH = 0x10 };
 /* The menu's per-frame update (update 1.11: 0x313330, update(menu, ...), called once a frame by
  * the main loop; the dispatcher runs inside it). The save data dialog opens on the save system's

@@ -174,6 +174,17 @@ std::vector<Gow3Png::Image> preview_pictures;
 std::vector<ImTextureData*> preview_textures;
 bool preview_pending = false;
 std::atomic<int> preview_index{-1};
+/// When ShowPreview last asked (steady_clock ticks): the menu's update asks every frame while the
+/// list is shown; the picture goes once it stops (Start closes the pause menu at once, and the
+/// update that would hide it no longer runs).
+std::atomic<int64_t> preview_asked{0};
+bool PreviewShown() {
+    if (preview_index < 0) {
+        return false;
+    }
+    const auto age = std::chrono::steady_clock::now().time_since_epoch().count() - preview_asked.load();
+    return age < std::chrono::duration_cast<std::chrono::steady_clock::duration>(std::chrono::milliseconds(250)).count();
+}
 
 // Trophy popups (ShowTrophy) and the Trophies tab's pictures, guarded by imgui_mutex. A picture
 // becomes a texture before the next frame (UpdateTrophyTextures); retired ones are freed there.
@@ -1790,7 +1801,7 @@ void UpdatePreviewTextures() {
 // The shown row's picture, under the texts of the panel beside the list (1080p: 773,320 to
 // 1442,697, the Chapters picture's size), its aspect kept.
 void DrawPreview(vk::Extent2D extent) {
-    const int shown = preview_index;
+    const int shown = PreviewShown() ? preview_index.load() : -1;
     const bool picture_box = shown >= 0 && (shown & GOW3_PREVIEW_PICTURE_BOX);
     const int index = shown < 0 ? -1 : shown & (GOW3_PREVIEW_PICTURE_BOX - 1);
     if (index < 0 || index >= int(preview_textures.size()) || !preview_textures[index]) {
@@ -2014,7 +2025,7 @@ void SetLoading(bool active, u32 done, u32 total) {
 bool Visible() {
     const auto& s = Gow3Settings::Get();
     // open_requested: the next Render opens the menu, also when nothing else is drawn.
-    return initialized && (loading || background_total || menu_open || open_requested || preview_index >= 0 ||
+    return initialized && (loading || background_total || menu_open || open_requested || PreviewShown() ||
                            text_entry_active || choice_active ||
                            choice_retiring || s.show_fps || trophy_showing);
 }
@@ -2035,6 +2046,7 @@ void SetPreviewPictures(std::vector<Gow3Png::Image> pictures) {
 }
 
 void ShowPreview(int index) {
+    preview_asked = std::chrono::steady_clock::now().time_since_epoch().count();
     preview_index = index;
 }
 
