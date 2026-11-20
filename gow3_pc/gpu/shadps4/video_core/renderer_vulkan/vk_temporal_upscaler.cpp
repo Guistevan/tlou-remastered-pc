@@ -174,6 +174,19 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
                         : dlss->Problem();
         Gow3Settings::ConfigureDlssSupport(dlss && dlss->Available(), problem.c_str());
     }
+    // gow3 20 Nov 2026: XeSS is offered when libxess.dll is there, and runs when the device was
+    // created for it (XeSS the upscaler at start, vk_instance.cpp).
+    xess = std::make_unique<Xess>(instance, scheduler);
+    {
+        std::string why;
+        const bool available = Xess::LibraryAvailable(&why);
+        static std::string problem;
+        problem = !available               ? why
+                  : Xess::DeviceReady()    ? std::string{}
+                  : Xess::SelectedAtStart() ? Xess::DeviceProblem()
+                                           : "applies from the next start (FSR 3.1 until then)";
+        Gow3Settings::ConfigureXessSupport(available, Xess::DeviceReady(), problem.c_str());
+    }
     // Available unless GOW3_UPSCALER=none; on/off and the parameters are the menu's settings.
     const char* env = std::getenv("GOW3_UPSCALER");
     enabled = !(env && std::strcmp(env, "none") == 0);
@@ -242,6 +255,7 @@ TemporalUpscaler::TemporalUpscaler(const Instance& instance_, Scheduler& schedul
 
 TemporalUpscaler::~TemporalUpscaler() {
     if (resources_ready) scheduler.Finish();
+    xess.reset();
     if (context) {
         scheduler.Finish();
         ffxVkPortableUpscaleContextDestroy(context);
@@ -254,14 +268,15 @@ bool TemporalUpscaler::Active() const {
            (Gow3Settings::Get().upscaler == Gow3Settings::UpscalerFsr3 ||
             Gow3Settings::IsFsr4(Gow3Settings::Get().upscaler) ||
             Gow3Settings::Get().upscaler == Gow3Settings::UpscalerTaa ||
-            Gow3Settings::Get().upscaler == Gow3Settings::UpscalerDlss) &&
+            Gow3Settings::Get().upscaler == Gow3Settings::UpscalerDlss ||
+            Gow3Settings::Get().upscaler == Gow3Settings::UpscalerXess) &&
            !Gow3Toggle::Disabled(1u << 24);
 }
 
 bool TemporalUpscaler::ReactiveOn() const {
     // FSR 4 takes no reactive mask: the opaque snapshot and the mask pass would be wasted.
     return Gow3Settings::Get().reactive && !Gow3Toggle::Disabled(1u << 27) && !UseFsr4() && !UseDlss() &&
-           Gow3Settings::Get().upscaler != Gow3Settings::UpscalerTaa;
+           !UseXess() && Gow3Settings::Get().upscaler != Gow3Settings::UpscalerTaa;
 }
 
 void TemporalUpscaler::OnSceneColor(VideoCore::ImageId color) {
@@ -359,6 +374,10 @@ bool TemporalUpscaler::OnFrameStart() {
         if (Gow3Settings::IsFsr4(upscaler)) Gow3Settings::Get().fsr4_problem = nullptr;
     }
     if (applied_upscaler != upscaler) fsr4_failed = false; // retry after a menu change
+    if (applied_upscaler != upscaler && upscaler == Gow3Settings::UpscalerXess && xess_failed) {
+        xess = std::make_unique<Xess>(instance, scheduler); // the GPU is idle (Finish above)
+        xess_failed = false;
+    }
     // Dynamic scene resolution scaling (live preset switching) works on all GPUs.
     // On GPUs without D32S8 blit support, UI depth is cleared instead of copied from scene.
     if (!scaled_session) {
@@ -426,8 +445,8 @@ void TemporalUpscaler::OnDispatch(u64 cs_hash) {
 }
 
 bool TemporalUpscaler::EnsureResources(u32 w, u32 h, u32 ow, u32 oh, bool hdr) {
-    // DLSS, like FSR 4, has its own context: no portable FSR 3 context is made.
-    const bool use_fsr4 = UseFsr4() || UseDlss();
+    // DLSS and XeSS, like FSR 4, have their own contexts: no portable FSR 3 context is made.
+    const bool use_fsr4 = UseFsr4() || UseDlss() || UseXess();
     const bool use_taa = Gow3Settings::Get().upscaler == Gow3Settings::UpscalerTaa;
     if (use_taa && (w != ow || h != oh)) {
         std::printf("TAA: remove GOW3_RENDER_RES to use native-resolution TAA\n");
@@ -785,9 +804,9 @@ void TemporalUpscaler::RecordTaa(vk::CommandBuffer cmdbuf, vk::ImageView color,
 }
 
 void TemporalUpscaler::ExtraSharpen(vk::CommandBuffer cmdbuf, vk::Image target, bool ldr, u32 w,
-                                    u32 h) {
+                                    u32 h, bool whole) {
     const auto& settings = Gow3Settings::Get();
-    const float extra = std::clamp(settings.sharpness.load(), 0.0f, 2.0f) - 1.0f;
+    const float extra = std::clamp(settings.sharpness.load(), 0.0f, 2.0f) - (whole ? 0.0f : 1.0f);
     if (!settings.sharpen || extra <= 0.0f) {
         return;
     }
@@ -1156,6 +1175,12 @@ void TemporalUpscaler::Run() {
             {input_color, input_color_view, color.info.pixel_format, vk::ImageAspectFlagBits::eColor, w, h},
             {input_depth, input_depth_view, depth_format, vk::ImageAspectFlagBits::eDepth, w, h}, w, h,
             ow, oh, frame_ms, true);
+    } else if (UseXess()) {
+        dispatched = RecordXess(
+            cmdbuf,
+            {input_color, input_color_view, color.info.pixel_format, vk::ImageAspectFlagBits::eColor, w, h},
+            {input_depth, input_depth_view, depth_format, vk::ImageAspectFlagBits::eDepth, w, h}, w, h,
+            ow, oh, true);
     } else if (context) { // (none when made for FSR 4, DLSS or TAA: FSR 3 chosen since)
         FfxVkPortableUpscaleDispatchInfo info{};
         info.structSize = sizeof(info);
@@ -1229,7 +1254,7 @@ void TemporalUpscaler::Run() {
         reset = false;
         dispatched_last_frame = true;
         if (Gow3Settings::Get().upscaler != Gow3Settings::UpscalerTaa) {
-            ExtraSharpen(cmdbuf, vk::Image(output_image), false, ow, oh);
+            ExtraSharpen(cmdbuf, vk::Image(output_image), false, ow, oh, UseXess());
         }
         // gow3: GOW3_DUMP_TRIGGER also dumps native anti-aliasing: its input, motion
         // vectors, result and depth, before the result replaces the scene color.
@@ -1733,6 +1758,13 @@ void TemporalUpscaler::RunScaled() {
                              {depth_image, depth_view, depth_format, vk::ImageAspectFlagBits::eDepth,
                               source_width, source_height},
                              w, h, ow, oh, frame_ms, false);
+        } else if (UseXess()) {
+            ok4 = RecordXess(cmdbuf,
+                             {color_image, color_view, LdrFormat(color.info.pixel_format),
+                              vk::ImageAspectFlagBits::eColor, source_width, source_height},
+                             {depth_image, depth_view, depth_format, vk::ImageAspectFlagBits::eDepth,
+                              source_width, source_height},
+                             w, h, ow, oh, false);
         } else if (UseFsr4()) {
             ok4 = RecordFsr4(cmdbuf, {color_image, color_view, source_width, source_height},
                             {depth_image, depth_view, source_width, source_height}, w, h, ow,
@@ -1742,7 +1774,7 @@ void TemporalUpscaler::RunScaled() {
         }
         if (ok4) {
             if (!taa) {
-                ExtraSharpen(cmdbuf, vk::Image(output_image), false, ow, oh);
+                ExtraSharpen(cmdbuf, vk::Image(output_image), false, ow, oh, UseXess());
             }
             vk::Image source = vk::Image(output_image);
             vk::ImageLayout source_layout = vk::ImageLayout::eGeneral;
@@ -2401,6 +2433,50 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
         std::printf("Upscaler: DLSS failed; falling back to FSR 3.1\n");
         Gow3Settings::Get().upscaler = Gow3Settings::UpscalerFsr3;
         dlss_failed = true; // EnsureResources creates the FSR 3 context next frame
+        reset = true;
+    }
+    return ok;
+}
+
+bool TemporalUpscaler::UseXess() const {
+    // Chosen in the menu after the start, FSR 3.1 runs until the next start (the device was not
+    // created for XeSS); the setting stays.
+    return Gow3Settings::Get().upscaler == Gow3Settings::UpscalerXess &&
+           Gow3Settings::Get().xess_ready && xess && !xess_failed;
+}
+
+bool TemporalUpscaler::RecordXess(vk::CommandBuffer cmdbuf, const Xess::Image& color,
+                                  const Xess::Image& depth, u32 w, u32 h, u32 ow, u32 oh,
+                                  bool hdr) {
+    // The jitter and motion vectors DLSS gets. Toggle 1 << 26 or GOW3_XESS_INVERT_JITTER=1 (tests)
+    // flips the jitter, in case XeSS takes the opposite sign.
+    static const bool invert_env = [] {
+        const char* env = std::getenv("GOW3_XESS_INVERT_JITTER");
+        return env && env[0] == '1';
+    }();
+    const float sign = Gow3Toggle::Disabled(1u << 26) != invert_env ? -1.0f : 1.0f;
+    const bool ok = xess->Record({
+        .cmdbuf = cmdbuf,
+        .color = color,
+        .depth = depth,
+        .motion = {vk::Image(motion_image), *motion_view, vk::Format::eR16G16Sfloat,
+                   vk::ImageAspectFlagBits::eColor, w, h},
+        .output = {vk::Image(output_image), *output_view, vk::Format::eR16G16B16A16Sfloat,
+                   vk::ImageAspectFlagBits::eColor, ow, oh},
+        .input_width = w,
+        .input_height = h,
+        .jitter = {sign * jitter[0], sign * jitter[1]},
+        .reset = reset,
+        .hdr = hdr,
+    });
+    if (!ok && xess->Fatal()) {
+        static std::string shown;
+        const char* problem = xess->Problem();
+        shown = problem ? problem : "XeSS failed";
+        Gow3Settings::Get().xess_problem = shown.c_str();
+        std::printf("Upscaler: XeSS failed; falling back to FSR 3.1\n");
+        Gow3Settings::Get().upscaler = Gow3Settings::UpscalerFsr3;
+        xess_failed = true; // EnsureResources creates the FSR 3 context next frame
         reset = true;
     }
     return ok;
