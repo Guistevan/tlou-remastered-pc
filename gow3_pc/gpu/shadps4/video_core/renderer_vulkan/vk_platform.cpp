@@ -13,6 +13,8 @@
 #define VK_USE_PLATFORM_XLIB_KHR
 #endif
 
+#include <cstdio>
+#include <cstdlib>
 #include <vector>
 #include <fmt/ranges.h>
 
@@ -259,6 +261,31 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
                                   bool enable_crash_diagnostic) {
     LOG_INFO(Render_Vulkan, "Creating vulkan instance");
 
+#ifdef _WIN32
+    // gow3 20 Nov 2026 (#194, #206): on laptops with an AMD integrated GPU and an NVIDIA one
+    // (Ryzen 5 3550H + GTX 1650), the game stopped at a black window before the first "GPU 0:"
+    // line: the AMD driver's implicit layer VK_LAYER_AMD_switchable_graphics hung instance
+    // creation or the GPU listing. The layer only hides the GPU it does not prefer; the
+    // automatic choice in vk_instance.cpp already prefers the discrete one. Its manifest's
+    // disable_environment turns it off for this process (the loader reads the Win32
+    // environment, which _putenv_s updates). GOW3_AMD_SWITCHABLE_LAYER=1 keeps it; a value the
+    // player set keeps theirs.
+    {
+        const char* keep = std::getenv("GOW3_AMD_SWITCHABLE_LAYER");
+        const bool keep_layer = keep && keep[0] == '1';
+        if (!keep_layer && !std::getenv("DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1")) {
+            _putenv_s("DISABLE_LAYER_AMD_SWITCHABLE_GRAPHICS_1", "1");
+        }
+        std::printf("GPU: creating the Vulkan instance (AMD switchable graphics layer %s)\n",
+                    keep_layer ? "kept, GOW3_AMD_SWITCHABLE_LAYER=1"
+                               : "off, GOW3_AMD_SWITCHABLE_LAYER=1 keeps it");
+    }
+#else
+    std::printf("GPU: creating the Vulkan instance\n");
+#endif
+    // A hang in the Vulkan loader leaves this as the log's last line.
+    std::fflush(stdout);
+
 #if defined(__APPLE__)
     // Initialize the environment with the path to the included ICD, so that the loader will
     // find it.
@@ -447,6 +474,9 @@ vk::UniqueInstance CreateInstance(Frontend::WindowSystemType window_type, bool e
                vk::to_string(instance_result));
 
     VULKAN_HPP_DEFAULT_DISPATCHER.init(*instance);
+    // gow3: tells a hang in the GPU listing (next) apart from one in instance creation.
+    std::printf("GPU: Vulkan instance created, listing GPUs\n");
+    std::fflush(stdout);
 
     return std::move(instance);
 }
