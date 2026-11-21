@@ -72,6 +72,10 @@ public:
     /// gow3: LOD bias for scene materials, log2(render / output) while a reduced scene is
     /// upscaled (0 at native size, for TAA and without an upscaler).
     [[nodiscard]] float SceneMipBias() const;
+    /// gow3: an image of the game's render size (the scene's targets, which the game may align).
+    [[nodiscard]] bool RenderSizeTarget(u32 w, u32 h) const {
+        return RenderTarget(w, h);
+    }
     /// gow3: the state RedirectColor/RedirectDepth/RasterScaling depend on, for memoizing a
     /// draw's render state (Rasterizer::BeginRendering).
     [[nodiscard]] u64 RedirectState() const noexcept {
