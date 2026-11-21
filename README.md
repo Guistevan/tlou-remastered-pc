@@ -427,7 +427,10 @@ in `launcher/assets/icon.ico` (not in the repository).
   MIT-licensed FidelityFX SDK source.
 - **Intel XeSS:** the XeSS option follows VHXXIII's XeSS anti-aliasing for
   [SpartanPort](https://github.com/FelipePrado0/SpartanPort/pull/1276) and loads Intel's unmodified
-  `libxess.dll` (Intel Simplified Software License; `tools/fetch_aa_files.sh xess`) at run time. The
+  `libxess.dll` (Intel Simplified Software License; `tools/fetch_aa_files.sh xess`, and in the
+  release package with its license under `licenses/xess`) at run time. It runs on GPUs with
+  `VK_EXT_mutable_descriptor_type` (not on a GTX 10 series card or Intel's UHD 630, for example) and
+  needs the Microsoft Visual C++ 2015-2022 Redistributable (x64); elsewhere FSR 3.1 runs. The
   headers in `gow3_pc/gpu/third_party/xess` are Intel's (MIT). Intel and XeSS are trademarks of
   Intel Corporation.
 - Third-party code: FSR (AMD), imgui, magic_enum, miniz, xbyak, LibAtrac9, FFmpeg, SDL3, PkgTool

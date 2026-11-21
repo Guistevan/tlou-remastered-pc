@@ -2923,8 +2923,8 @@ class Launcher(tk.Tk):
                                       resolution_label(res))
         fps = ini.get("fps_limit", "60")
         self.fps = self.choice(panel, row + 2, self.t("fps"), FPS if fps in FPS else FPS + [fps], fps)
-        # XeSS only with Intel's libxess.dll beside the runtime (not in the release package:
-        # tools/fetch_aa_files.sh xess), or when it is already the saved choice.
+        # XeSS only with Intel's libxess.dll beside the runtime (in the release package; in a
+        # build from source: tools/fetch_aa_files.sh xess), or when it is already the saved choice.
         upscalers = dict(UPSCALERS)
         if not (ROOT / "gow3_pc/out/libxess.dll").is_file() and ini.get("upscaler") != "xess":
             upscalers.pop("XeSS")

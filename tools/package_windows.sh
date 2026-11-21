@@ -84,6 +84,17 @@ done
     "$pacman" -Qi "${packages[@]}" | awk '/^Name /{print ""} /^(Name|Version|Licenses|URL) /{print}'
 } > "$licenses/THIRD-PARTY.txt"
 
+# Intel XeSS: Intel's unmodified libxess.dll (pinned and checksummed by tools/fetch_aa_files.sh,
+# kept in downloads/ after the first run), redistributable under the Intel Simplified Software
+# License, which ships beside it with its third-party notices. About 56 MiB of the zip. It runs on
+# GPUs with VK_EXT_mutable_descriptor_type and needs the Visual C++ 2015-2022 runtime (x64); on
+# the others the game says why and uses FSR 3.1.
+bash tools/fetch_aa_files.sh xess
+cp gow3_pc/out/libxess.dll "$stage/gow3_pc/out/"
+mkdir -p "$licenses/xess"
+cp gow3_pc/out/libxess-LICENSE.txt "$licenses/xess/LICENSE.txt"
+cp gow3_pc/out/libxess-third-party-programs.txt "$licenses/xess/third-party-programs.txt"
+
 "$python_home/python.exe" tools/copy_python.py "$(cygpath -w "$python_home")" "$(cygpath -w "$stage/python")"
 "$python_home/python.exe" -I tools/package_check.py "$(cygpath -w "$stage")" "$(cygpath -w "dist/$name.zip")"
 rm -rf -- "dist/$name"
