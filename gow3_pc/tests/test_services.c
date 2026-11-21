@@ -113,6 +113,12 @@ int main(void) {
     /* PlayGo: installed, full speed, progress never divides by zero. */
     int32_t handle=0; uint64_t progress[2]; int32_t speed; uint16_t chunk=0;
     assert(playgo_init(NULL)==0 && playgo_open(&handle,NULL)==0);
+    /* No playgo-chunk.dat: TLOU's 64 chunks (a dump without it stopped at the first save load). */
+    {
+        uint32_t chunks=0; uint16_t last=63;
+        assert(playgo_chunk_ids(handle,NULL,0,&chunks)==0 && chunks==64);
+        assert(playgo_prefetch(handle,&last,1,3)==0);
+    }
     assert(playgo_get_speed(handle,&speed)==0 && speed==2);
     assert(playgo_progress(handle,&chunk,1,progress)==0 && progress[0]==progress[1] && progress[1]);
     assert(playgo_progress(handle,&chunk,0,progress)==PLAYGO_BAD_SIZE);

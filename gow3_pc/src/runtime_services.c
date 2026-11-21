@@ -925,10 +925,16 @@ static void playgo_find_absent(const unsigned char *dat,size_t size) {
 }
 static ABI int32_t playgo_init(const void *params) {
     (void)params;
-    int fd=(int)runtime_file_open("/app0/sce_sys/playgo-chunk.dat",0,0);
+    /* 21 Nov 2026: a dump without playgo-chunk.dat had 1 chunk here; the game called it a stub
+     * package and its first save load stopped at an assertion (PrefetchChunkSet: the
+     * "languages" set names chunk ids up to 63, each PLAYGO_BAD_CHUNK). Without the file: the
+     * 64 chunks of TLOU's package, all local (missing dubs are then not detected here; the
+     * launcher hides them from the menu). GOW3_PLAYGO_CHUNK_DAT=0 ignores the file (test). */
+    const char *use_dat=getenv("GOW3_PLAYGO_CHUNK_DAT");
+    int fd=use_dat && use_dat[0]=='0' ? -1 : (int)runtime_file_open("/app0/sce_sys/playgo-chunk.dat",0,0);
     static unsigned char dat[65536];
     int64_t size=0;
-    playgo_chunks=1;
+    playgo_chunks=64;
     memset(playgo_absent,0,sizeof(playgo_absent));
     int lang=language();
     __atomic_store_n(&playgo_language_mask,lang>=0 && lang<48 ? UINT64_C(1)<<(63-lang) : 0,__ATOMIC_RELAXED);

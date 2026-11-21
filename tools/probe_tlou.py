@@ -687,6 +687,12 @@ def main():
         if dubs:
             patches["dubs without files hidden"] = dubs
             print(f"Languages: dubs not in the game folder, left out of the dialogue menu: {', '.join(missing)}")
+    # 21 Nov 2026: a dump without sce_sys/playgo-chunk.dat stopped at the first save load (the
+    # game's PrefetchChunkSet assertion); the runtime now reports TLOU's 64 chunks without it.
+    if not any(f is not None and (Path(f) / "sce_sys/playgo-chunk.dat").is_file()
+               for f in (game, update)):
+        print("Game folder: sce_sys/playgo-chunk.dat missing (incomplete dump); the game runs "
+              "with all 64 PlayGo chunks reported installed")
     # GOW3_LANGUAGE set outside wins over the launcher's choice.
     system_language = (ini_value(Path(env["GOW3_CONFIG"]), "system_language") or "").strip()
     if system_language in SYSTEM_LANGUAGES:
