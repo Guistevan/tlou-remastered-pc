@@ -4674,11 +4674,12 @@ void Rasterizer::JoinBindHelper(void* context) {
 }
 
 // gow3 21 Nov 2026: whether a draw samples the scene's materials (the texture LOD bias above).
-// God of War III draws its G-buffer into 5 or more targets. The Last of Us lights a pre-pass and
-// draws its materials into one or two targets, so that test never matched there: its upscaled
-// presets sampled textures at the render size's mip levels. Also: a draw into a target of the
-// game's render size with a depth buffer, the scene's geometry (shadow passes have no colour
-// target; post processing and the HUD no depth buffer, and their images mostly no mip levels).
+// God of War III draws its G-buffer into 5 or more targets. No draw of The Last of Us has that
+// many (no upscaled run logged the bias), so its upscaled presets sampled textures at the render
+// size's mip levels. Also: a draw into a target of the game's render size with a depth buffer,
+// meant to be the scene's geometry. Shadow passes have no colour target; full-screen passes are
+// expected to bind no depth buffer, and render targets they sample to have no mip levels for the
+// bias to change. On an Arc B580 at the Quality preset this biased about 43% of the draws.
 // GOW3_SCENE_LOD_BIAS=mrt keeps the G-buffer test alone.
 bool Rasterizer::SceneMaterialDraw(const GraphicsPipeline& pipeline) {
     const auto& key = pipeline.GetGraphicsKey();

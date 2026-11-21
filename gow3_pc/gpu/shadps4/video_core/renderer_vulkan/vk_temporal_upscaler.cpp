@@ -90,7 +90,7 @@ struct DumpImage {
 };
 
 /// gow3 20 Nov 2026: the dump's name for the output-size UI image's 4-byte format ("final": every
-/// upscaler's result as the HUD is drawn over it, to compare them in one format).
+/// upscaler's result right before the HUD is drawn over it, to compare them in one format).
 const char* UiDumpFormat(vk::Format format) {
     switch (format) {
     case vk::Format::eB8G8R8A8Unorm:
@@ -623,7 +623,8 @@ bool TemporalUpscaler::EnsureResources(u32 w, u32 h, u32 ow, u32 oh, bool hdr) {
         return true;
     }
     if (use_fsr4) {
-        std::printf("Upscaler: FSR 4 inputs %ux%u -> %ux%u\n", w, h, ow, oh);
+        std::printf("Upscaler: %s inputs %ux%u -> %ux%u\n",
+                    UseXess() ? "XeSS" : UseDlss() ? "DLSS" : "FSR 4", w, h, ow, oh);
         return true;
     }
     FfxVkPortableMemoryUsage usage{};
@@ -2487,9 +2488,9 @@ bool TemporalUpscaler::RecordDlss(vk::CommandBuffer cmdbuf, const Dlss::Resource
 namespace {
 /// gow3 21 Nov 2026: which stencil values are characters, for XeSS's responsive mask.
 /// GOW3_XESS_STENCIL=<bits>:<match>[:invert] (numbers in C notation: 0x10:0x10), or "off".
-/// The Last of Us writes 0x50 over Joel and 0 over the world (a stencil dump at 3408x960: 0 on
-/// 95.5% of the pixels, 0x50 on 4.5%, exactly his silhouette; 0x40 on a few edge pixels): any of
-/// those bits marks a character.
+/// tlou: the game writes 0x50 over Joel and 0 over the world (a stencil dump at 3408x960: 0 on
+/// 95.5% of the pixels, 0x50 on 4.5%, exactly his silhouette; 0x40 on a few edge pixels). Other
+/// characters were not checked: a pixel with either bit is taken as a character.
 constexpr u32 StencilCharacterBits = 0x50;
 struct StencilRule {
     bool enabled = false;
@@ -2576,8 +2577,9 @@ bool TemporalUpscaler::RecordXess(vk::CommandBuffer cmdbuf, const Xess::Image& c
         const char* env = std::getenv("GOW3_XESS_RESPONSIVE_MAX");
         return env && env[0] ? std::clamp(float(std::atof(env)), 0.0f, 1.0f) : 0.9f;
     }();
-    // The jitter and motion vectors DLSS gets. Toggle 1 << 26 or GOW3_XESS_INVERT_JITTER=1 (tests)
-    // flips the jitter, in case XeSS takes the opposite sign.
+    // The jitter and motion vectors DLSS gets. Toggle 1 << 26 or GOW3_XESS_INVERT_JITTER=1 flips
+    // the jitter, for tests: on an Arc B580 the flipped sign cost XeSS detail in the scaled and
+    // Native AA paths, so the default is the right one.
     static const bool invert_env = [] {
         const char* env = std::getenv("GOW3_XESS_INVERT_JITTER");
         return env && env[0] == '1';

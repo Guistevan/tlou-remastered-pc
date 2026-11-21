@@ -76,7 +76,8 @@ enum : std::uint64_t {
     // gow3 20 Nov 2026: XeSS diagnostics (vk_xess.cpp, TemporalUpscaler::RecordXess), A/B in one
     // run. Native AA only: XeSS gets the HDR scene without its auto exposure (exposure scale 1),
     // or takes it as display-range (LDR) colour, as in the scaled presets. XeSS initialises again
-    // when either changes.
+    // when either changes. Neither helped on an Arc B580 (both about 6% less detail than the
+    // default); kept for tests on other GPUs.
     XessNoAutoExposure = 1ull << 56,
     XessLdrInput = 1ull << 58,
     /// Every temporal upscaler (TAA, FSR 3/4, DLSS, XeSS) without the menu's sharpening.
