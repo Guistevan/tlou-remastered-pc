@@ -233,8 +233,8 @@ struct Xess::Impl {
     }
 
     /// The quality setting whose input range holds the render size: XeSS takes any input size
-    /// between that setting's minimum and maximum, nearest to its optimum. The preset scales
-    /// (1.5, 1.7, 2, 3) are XeSS's own Ultra Quality, Quality, Balanced and Ultra Performance.
+    /// between that setting's minimum and maximum, nearest to its optimum. The library's own table
+    /// decides which: libxess 2.0.2 picks Quality for the 1.5 preset (3408x960 -> 5120x1440).
     bool PickQuality(u32 w, u32 h, u32 ow, u32 oh, xess_quality_settings_t& quality) {
         static constexpr xess_quality_settings_t settings[] = {
             XESS_QUALITY_SETTING_AA,           XESS_QUALITY_SETTING_ULTRA_QUALITY_PLUS,
