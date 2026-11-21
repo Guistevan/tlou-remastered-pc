@@ -197,8 +197,13 @@ private:
     /// gow3: XeSS selected and runnable in this session (the device was created for it).
     [[nodiscard]] bool UseXess() const;
     /// Records XeSS into `cmdbuf` (output in General); on a permanent failure FSR 3 takes over.
+    /// `responsive`: reactive_image holds the stencil mask (RecordStencilResponsive).
     bool RecordXess(vk::CommandBuffer cmdbuf, const Xess::Image& color, const Xess::Image& depth,
-                    u32 w, u32 h, u32 ow, u32 oh, bool hdr);
+                    u32 w, u32 h, u32 ow, u32 oh, bool hdr, bool responsive);
+    /// gow3: XeSS's responsive mask from the scene stencil into reactive_image (w x h); `depth`
+    /// in General layout. False when off (GOW3_XESS_STENCIL, toggle) or without a stencil.
+    bool RecordStencilResponsive(vk::CommandBuffer cmdbuf, const VideoCore::Image& depth,
+                                 vk::Format depth_format, u32 w, u32 h);
     /// Records FSR 4 into output_image; on a permanent failure FSR 3 takes over.
     bool RecordFsr4(vk::CommandBuffer cmdbuf, Fsr4Upscaler::Image color, Fsr4Upscaler::Image depth,
                     u32 w, u32 h, u32 ow, u32 oh, float frame_ms);
@@ -313,6 +318,9 @@ private:
     vk::UniqueDescriptorSetLayout reactive_desc_layout;
     vk::UniquePipelineLayout reactive_pipeline_layout;
     vk::UniquePipeline reactive_pipeline;
+    vk::UniqueDescriptorSetLayout stencil_desc_layout;
+    vk::UniquePipelineLayout stencil_pipeline_layout;
+    vk::UniquePipeline stencil_pipeline;
     vk::UniqueDescriptorSetLayout merge_desc_layout;
     vk::UniquePipelineLayout merge_pipeline_layout;
     vk::UniquePipeline merge_pipeline;

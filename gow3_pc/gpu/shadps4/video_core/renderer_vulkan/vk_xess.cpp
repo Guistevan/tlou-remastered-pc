@@ -63,6 +63,7 @@ struct Library {
     xess_result_t (*is_optimal_driver)(xess_context_handle_t){};
     xess_result_t (*optimal_input)(xess_context_handle_t, const xess_2d_t*,
                                    xess_quality_settings_t, xess_2d_t*, xess_2d_t*, xess_2d_t*){};
+    xess_result_t (*set_max_responsive)(xess_context_handle_t, float){};
 
     bool Ok() const {
         return module && create && init && execute && destroy;
@@ -130,6 +131,7 @@ Library& GetLibrary() {
         Resolve(lib.module, "xessSetLoggingCallback", lib.set_logging);
         Resolve(lib.module, "xessIsOptimalDriver", lib.is_optimal_driver);
         Resolve(lib.module, "xessGetOptimalInputResolution", lib.optimal_input);
+        Resolve(lib.module, "xessSetMaxResponsiveMaskValue", lib.set_max_responsive);
         if (!lib.Ok()) {
             lib.error = "libxess.dll has no Vulkan entry points (not Intel's XeSS SDK library?)";
         }
@@ -209,7 +211,9 @@ struct Xess::Impl {
     u32 init_out_width = 0, init_out_height = 0;
     u32 input_width = 0, input_height = 0; ///< of the last frame
     xess_quality_settings_t init_quality{};
-    bool init_hdr = false;
+    u32 init_flags = 0;
+    const char* init_colour = "";
+    float mask_max = -1.0f; ///< the responsive mask's clip last set on the context
     bool initialised = false;
     bool fresh = true; ///< the history of the context is empty: the next frame resets it
     bool fatal = false;
@@ -347,9 +351,17 @@ struct Xess::Impl {
         }
         const u32 w = frame.input_width, h = frame.input_height;
         const u32 ow = frame.output.width, oh = frame.output.height;
+        // Native AA: the lit scene before the post processing (linear HDR, by default exposed by
+        // XeSS); upscaling: the game's finished, tonemapped frame. Motion vectors at the render
+        // size, without the jitter; depth not inverted.
+        const bool has_mask = frame.responsive.view && lib.set_max_responsive;
+        const u32 flags = (!frame.hdr          ? u32(XESS_INIT_FLAG_LDR_INPUT_COLOR)
+                           : frame.auto_exposure ? u32(XESS_INIT_FLAG_ENABLE_AUTOEXPOSURE)
+                                                 : 0u) |
+                          (has_mask ? u32(XESS_INIT_FLAG_RESPONSIVE_PIXEL_MASK) : 0u);
         const bool sizes_changed = !initialised || w != input_width || h != input_height ||
                                    ow != init_out_width || oh != init_out_height ||
-                                   frame.hdr != init_hdr;
+                                   flags != init_flags;
         xess_quality_settings_t quality = init_quality;
         if (sizes_changed && !PickQuality(w, h, ow, oh, quality)) {
             char text[160];
@@ -364,17 +376,13 @@ struct Xess::Impl {
         input_height = h;
         // A new input size within the setting's range needs no initialisation.
         if (!initialised || ow != init_out_width || oh != init_out_height ||
-            frame.hdr != init_hdr || quality != init_quality) {
+            flags != init_flags || quality != init_quality) {
             // XeSS's memory may still be read by submitted work; `frame.cmdbuf` stays open.
             scheduler.WaitSubmitted();
             xess_vk_init_params_t init{};
             init.outputResolution = {ow, oh};
             init.qualitySetting = quality;
-            // Native AA: the lit scene before the post processing (linear, exposed by XeSS);
-            // upscaling: the game's finished, tonemapped frame. Motion vectors at the render size,
-            // without the jitter; depth not inverted.
-            init.initFlags = frame.hdr ? XESS_INIT_FLAG_ENABLE_AUTOEXPOSURE
-                                       : XESS_INIT_FLAG_LDR_INPUT_COLOR;
+            init.initFlags = flags;
             init.creationNodeMask = 1;
             init.visibleNodeMask = 1;
             const xess_result_t result = lib.init(context, &init);
@@ -387,7 +395,9 @@ struct Xess::Impl {
             init_out_width = ow;
             init_out_height = oh;
             init_quality = quality;
-            init_hdr = frame.hdr;
+            init_flags = flags;
+            init_colour = frame.colour ? frame.colour : "";
+            mask_max = -1.0f;
             fresh = true;
             logged_running = false;
         }
@@ -403,6 +413,14 @@ struct Xess::Impl {
         params.resetHistory = frame.reset || fresh ? 1u : 0u;
         params.inputWidth = w;
         params.inputHeight = h;
+        if (has_mask) {
+            params.responsivePixelMaskTexture = ViewInfo(frame.responsive);
+            const float clip = std::clamp(frame.responsive_max, 0.0f, 1.0f);
+            if (clip != mask_max) {
+                mask_max = clip;
+                lib.set_max_responsive(context, clip);
+            }
+        }
 
         // The inputs in the layout XeSS documents (shader read only), the output in General;
         // back to General afterwards for the rest of the frame.
@@ -418,11 +436,17 @@ struct Xess::Impl {
         Barrier(frame.cmdbuf, frame.color, true);
         Barrier(frame.cmdbuf, frame.depth, true);
         Barrier(frame.cmdbuf, frame.motion, true);
+        if (has_mask) {
+            Barrier(frame.cmdbuf, frame.responsive, true);
+        }
         const xess_result_t result =
             lib.execute(context, static_cast<VkCommandBuffer>(frame.cmdbuf), &params);
         Barrier(frame.cmdbuf, frame.color, false);
         Barrier(frame.cmdbuf, frame.depth, false);
         Barrier(frame.cmdbuf, frame.motion, false);
+        if (has_mask) {
+            Barrier(frame.cmdbuf, frame.responsive, false);
+        }
         if (result < 0) {
             Fail("execute", result, ++failures >= 3);
             return false;
@@ -432,8 +456,10 @@ struct Xess::Impl {
         fresh = false;
         if (!logged_running) {
             logged_running = true;
-            std::printf("XeSS: %ux%u -> %ux%u (%s, %s colour)\n", w, h, ow, oh,
-                        QualityName(init_quality), init_hdr ? "HDR scene" : "tonemapped");
+            std::printf("XeSS: %ux%u -> %ux%u (%s, %s%s)\n", w, h, ow, oh,
+                        QualityName(init_quality), init_colour,
+                        (init_flags & XESS_INIT_FLAG_RESPONSIVE_PIXEL_MASK) ? ", responsive mask"
+                                                                            : "");
         }
         return true;
     }

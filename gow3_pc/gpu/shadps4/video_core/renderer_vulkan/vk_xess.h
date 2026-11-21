@@ -45,10 +45,16 @@ public:
         vk::CommandBuffer cmdbuf;
         Image color, depth, motion; ///< layout General; the scene in their top-left corner
         Image output;               ///< output size, layout General, usage storage
+        /// Optional responsive pixel mask (R8 at the render size, layout General; 1 = rely on
+        /// this frame, not the history; view null = none), clipped to responsive_max.
+        Image responsive;
+        float responsive_max;
         u32 input_width, input_height; ///< the scene's size (the render size)
         std::array<float, 2> jitter;   ///< pixels, as the projection was shifted
         bool reset;
-        bool hdr; ///< linear scene colour (auto exposure), else the tonemapped frame
+        bool hdr;           ///< linear HDR colour, else display-range (LDR) colour
+        bool auto_exposure; ///< with hdr: XeSS's own exposure, else an exposure scale of 1
+        const char* colour; ///< what the colour is, for the log
     };
 
     /// Records XeSS into `frame.cmdbuf`: the inputs go to the shader read-only layout and back
