@@ -9,16 +9,20 @@
 #define DATA_MAGIC 0x44433030u
 #define DATA_MIN 0x1000u
 #define DATA_MAX 0x400000u
-#define REGIONS 32
+#define SLOT_SIZE 0x8000u
+#define SLOTS_MAX 64
 
-/* The new lists stay where they are written: a region is only written again for menu data loaded
- * at the same address (the file there was replaced, so nothing points at the old copy any more).
- * Other loads take new space; once the arena is full the button is left out of them. */
-typedef struct { uintptr_t base; size_t offset, length; } Region;
+/* The arena is cut in fixed slots, one per address menu data was loaded at (each load takes ~14
+ * KiB: the copied page table and lists). A load at an address seen before writes its slot again
+ * (the file there was replaced, so nothing points at the old copy any more); a load at a new
+ * address takes a free slot, else the one whose data was loaded longest ago (its menu data has
+ * long been replaced: the game holds a few menu files at once, far fewer than the slots). Before
+ * 21 Nov 2026 every new address took new space and after ~18 loads the arena was full for good. */
+typedef struct { uintptr_t base; uint64_t stamp; } Slot;
 static unsigned char *arena;
-static size_t arena_size, arena_end;
-static Region regions[REGIONS];
-static unsigned region_count, full_reported;
+static Slot slots[SLOTS_MAX];
+static unsigned slot_count;
+static uint64_t load_stamp;
 static atomic_flag arena_lock = ATOMIC_FLAG_INIT;
 static atomic_int asking, leaving;
 static uint32_t label = GOW3_MENU_LABEL_QUIT;
@@ -74,13 +78,22 @@ ABI const char *runtime_menu_exit_text(void *table, uint32_t sid) {
 
 void runtime_menu_exit_set_arena(unsigned char *memory, size_t size) {
     arena = memory;
-    arena_size = size;
+    slot_count = (unsigned)(size / SLOT_SIZE);
+    if (slot_count > SLOTS_MAX) slot_count = SLOTS_MAX;
 }
 
-static Region *region_of(uintptr_t base) {
-    for (unsigned i = 0; i < region_count; ++i)
-        if (regions[i].base == base) return &regions[i];
-    return NULL;
+/* The slot of menu data at base: its own, a free one, else the least recently loaded. */
+static unsigned slot_for(uintptr_t base, int *recycled) {
+    unsigned pick = 0;
+    *recycled = 0;
+    for (unsigned i = 0; i < slot_count; ++i)
+        if (slots[i].base == base) return i;
+    for (unsigned i = 0; i < slot_count; ++i) {
+        if (!slots[i].base) return i;
+        if (slots[i].stamp < slots[pick].stamp) pick = i;
+    }
+    *recycled = 1;
+    return pick;
 }
 
 /* The exit button, then the PC settings page (only with our labels: the text hook in). */
@@ -101,29 +114,20 @@ ABI void runtime_menu_exit_data_loaded(unsigned char *data) {
     while (atomic_flag_test_and_set(&arena_lock)) {}
     Gow3MenuPatched done = {0, 0};
     Gow3MenuPcPatched pc = {0, 0, 0};
-    int changed = 0, full = 0;
-    Region *region = region_of((uintptr_t)data);
-    if (region) {
-        size_t used = 0;
-        changed = patch(data, size, arena + region->offset, region->length, &used, &done, &pc);
-    }
-    if (!changed) {
-        size_t used = arena_end;
-        changed = patch(data, size, arena, arena_size, &used, &done, &pc);
-        if (changed) {
-            if (!region && region_count < REGIONS) region = &regions[region_count++];
-            if (region) *region = (Region){(uintptr_t)data, arena_end, used - arena_end};
-            arena_end = used;
-        } else if (arena_end + GOW3_MENU_NAME_SIZE + 16 + 2 * GOW3_MENU_ITEM_SIZE > arena_size && !full_reported) {
-            full = full_reported = 1;
-        }
-    }
+    int recycled = 0;
+    size_t used = 0;
+    const unsigned slot = slot_count ? slot_for((uintptr_t)data, &recycled) : 0;
+    /* A slot is taken only by data that got something: menu files without our lists leave it. */
+    const int changed = slot_count && patch(data, size, arena + (size_t)slot * SLOT_SIZE, SLOT_SIZE, &used, &done, &pc);
+    if (changed) slots[slot] = (Slot){(uintptr_t)data, ++load_stamp};
+    else recycled = 0;
     atomic_flag_clear(&arena_lock);
+    if (recycled) printf("Menu: menu data at a new address, slot %u reused\n", slot);
     if (done.lobby || done.pause) printf("Menu: QUIT button added (lobby lists %u, pause lists %u)\n", done.lobby, done.pause);
     if (pc.page || pc.button)
-        printf("Menu: PC settings added (page %u, Options lists %u, save list page %u)\n", pc.page, pc.button, pc.saves);
+        printf("Menu: PC settings added (page %u, Options lists %u, save list page %u; slot %u, %zu of %u bytes)\n",
+               pc.page, pc.button, pc.saves, slot, used, SLOT_SIZE);
     if (pc.saves) runtime_menu_saves_page_added();
-    if (full) puts("Menu: QUIT button memory full, later menu loads go without it");
 }
 
 static void leave(void) {

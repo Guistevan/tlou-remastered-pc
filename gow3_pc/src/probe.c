@@ -1029,8 +1029,9 @@ static void install_menu_exit(Segment *segments, uint64_t count, uint64_t size) 
         return;
     }
     /* The arena: the exit button's lists and the PC settings page (src/menu_pc_hook.h: the page
-     * table is copied, ~14 KiB per menu data load). */
-    enum { CLICK_STUB = 512, TEXT_STUB = 1024, OPTION_STUB = 1536, UPDATE_STUB = 2048, ARENA_PAGES = 64 };
+     * table is copied, ~14 KiB per menu data load), 32 slots of 32 KiB reused per load address
+     * (src/runtime_menu_exit.c). */
+    enum { CLICK_STUB = 512, TEXT_STUB = 1024, OPTION_STUB = 1536, UPDATE_STUB = 2048, ARENA_PAGES = 256 };
     uint64_t update_at = UINT64_MAX;
     unsigned char *stubs = allocate_near_image(size);
     unsigned char *arena = allocate(page_size * ARENA_PAGES);
