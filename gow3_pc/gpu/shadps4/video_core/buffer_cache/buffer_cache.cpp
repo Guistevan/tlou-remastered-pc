@@ -4792,7 +4792,7 @@ bool BufferCache::SideQueueFetch(std::span<const std::pair<VAddr, u64>> pieces, 
                      vk::CommandPoolCreateFlagBits::eTransient,
             .queueFamilyIndex = instance.GetCopyQueueFamilyIndex(),
         }));
-        urgent_cmd =Vulkan::Check<"urgent copy buffer">(device.allocateCommandBuffers({
+        urgent_cmd = Vulkan::Check<"urgent copy buffer">(device.allocateCommandBuffers({
             .commandPool = *urgent_pool,
             .level = vk::CommandBufferLevel::ePrimary,
             .commandBufferCount = 1,

@@ -780,11 +780,17 @@ bool Instance::CreateDevice() {
     // one-page read on the GPU command thread (a level load: ~6,000 in 5 s, frames of 160-500 ms).
     // A queue of another family takes the copies then, a transfer-only family first (the copy
     // engine), and buffers are shared between the two families (concurrent sharing).
-    // GOW3_COPY_FAMILY=0: no copy queue, as before.
+    // Measured on Intel only, so by default only Intel's drivers get it; AMD's (Windows, RADV)
+    // also have one graphics queue but keep the old path until it is tested there.
+    // GOW3_COPY_FAMILY=1: on any GPU; =0: no copy queue, as before.
     copy_queue_family_index = queue_family_index;
-    static const bool copy_family_wanted = [] {
+    const bool copy_family_wanted = [this] {
         const char* env = std::getenv("GOW3_COPY_FAMILY");
-        return !(env && env[0] == '0');
+        if (env && env[0]) {
+            return env[0] != '0';
+        }
+        return driver_id == vk::DriverId::eIntelProprietaryWindows ||
+               driver_id == vk::DriverId::eIntelOpenSourceMESA;
     }();
     if (queue_count < 2 && copy_family_wanted) {
         std::optional<u32> copy_family;
@@ -815,6 +821,10 @@ bool Instance::CreateDevice() {
                         "queue; GOW3_COPY_FAMILY=0: none)\n",
                         *copy_family, queue_family_index);
         }
+    } else if (queue_count < 2) {
+        std::printf("GPU: no copy queue (the graphics family %u has one queue; "
+                    "GOW3_COPY_FAMILY=1 takes one of another family)\n",
+                    queue_family_index);
     }
 
     const auto vk11_features = feature_chain.get<vk::PhysicalDeviceVulkan11Features>();

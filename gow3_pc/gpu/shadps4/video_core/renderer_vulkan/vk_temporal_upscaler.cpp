@@ -1219,7 +1219,7 @@ void TemporalUpscaler::Run() {
             {input_color, input_color_view, color.info.pixel_format, vk::ImageAspectFlagBits::eColor, w, h},
             {input_depth, input_depth_view, depth_format, vk::ImageAspectFlagBits::eDepth, w, h}, w, h,
             ow, oh, frame_ms, true);
-    } else if (UseXess()) {
+    } else if (resources_fsr4 && UseXess()) { // not into FSR 3's resources (chosen since)
         const bool mask = !reduced && RecordStencilResponsive(cmdbuf, depth, depth_format, w, h);
         dispatched = RecordXess(
             cmdbuf,
