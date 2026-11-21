@@ -988,10 +988,14 @@ static void install_stat_multipliers(Segment *segments, uint64_t count, uint64_t
            pickup ? "ready" : "unavailable");
 }
 /* QUIT in the lobby and the pause menu (src/menu_exit_hook.h): the menu data gets the button as it
- * loads, and the dispatcher tells the runtime when it is pressed. GOW3_MENU_EXIT=0 leaves it out. */
+ * loads, and the dispatcher tells the runtime when it is pressed. GOW3_MENU_EXIT=0 installs none of the menu
+ * hooks (QUIT, the PC SETTINGS page, the native save list). */
 static void install_menu_exit(Segment *segments, uint64_t count, uint64_t size) {
     const char *env = getenv("GOW3_MENU_EXIT");
-    if (env && env[0] == '0') return;
+    if (env && env[0] == '0') {
+        puts("Menu: the game's menu hooks are off (GOW3_MENU_EXIT=0): no QUIT, PC SETTINGS or native save list");
+        return;
+    }
     const uint64_t load_at = gow3_signature_find(image, size, &gow3_menu_load_site);
     const uint64_t click_at = gow3_signature_find(image, size, &gow3_menu_click_site);
     if (load_at == UINT64_MAX || click_at == UINT64_MAX || !mapped(segments, count, load_at, GOW3_MENU_LOAD_LENGTH) ||

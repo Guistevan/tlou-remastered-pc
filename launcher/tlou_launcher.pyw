@@ -152,6 +152,13 @@ STARTUP = [
         # (gow3_pc/src/runtime_hud.c); off: they stop at the 16:9 edges as before.
         ("Camadas do HUD até as bordas (ultrawide)", "GOW3_HUD_BARS", "1", "0", True),
     ]),
+    # The hooks on the game's own menu (gow3_pc/src/menu_exit_hook.h, menu_pc_hook.h): off, the
+    # menus are the game's as they were. The first takes the other two along.
+    ("Menu do jogo", [
+        ("Hooks do menu do jogo (botão Sair, Configurações de PC, lista de saves)", "GOW3_MENU_EXIT", "1", "0", True),
+        ("Página Configurações de PC", "GOW3_PC_MENU", "1", "0", True),
+        ("Lista de saves no menu do jogo", "GOW3_NATIVE_SAVE_LIST", "1", "0", True),
+    ]),
     # 15-19 Nov 2026 optimizations, each switchable for A/B tests (off: the code as before).
     ("Otimizações recentes", [
         ("Page watchers sob demanda (512 MiB a menos de RAM)", "GOW3_LAZY_PAGE_WATCHERS", "1", "0", True),
@@ -808,6 +815,42 @@ DEBUG_TEXT = {
         'Warstwy HUD do krawędzi ekranu (ultrawide)',
         'Слои HUD до краёв экрана (ultrawide)',
         'HUDのレイヤーを画面端まで表示 (ウルトラワイド)'),
+    'Menu do jogo': (
+        "Game menu",
+        "Menú del juego",
+        "Menu du jeu",
+        "Spielmenü",
+        "Menu del gioco",
+        "Menu gry",
+        "Меню игры",
+        "ゲームのメニュー"),
+    'Hooks do menu do jogo (botão Sair, Configurações de PC, lista de saves)': (
+        "Game menu hooks (Quit button, PC Settings, save list)",
+        "Hooks del menú del juego (botón Salir, Configuración de PC, lista de partidas)",
+        "Hooks du menu du jeu (bouton Quitter, Paramètres PC, liste des sauvegardes)",
+        "Hooks im Spielmenü (Beenden-Taste, PC-Einstellungen, Spielstandliste)",
+        "Hook del menu del gioco (pulsante Esci, Impostazioni PC, elenco salvataggi)",
+        "Hooki menu gry (przycisk Wyjdź, Ustawienia PC, lista zapisów)",
+        "Хуки меню игры (кнопка выхода, настройки ПК, список сохранений)",
+        "ゲームメニューのフック (終了ボタン、PC設定、セーブ一覧)"),
+    'Página Configurações de PC': (
+        "PC Settings page",
+        "Página Configuración de PC",
+        "Page Paramètres PC",
+        "Seite PC-Einstellungen",
+        "Pagina Impostazioni PC",
+        "Strona Ustawienia PC",
+        "Страница настроек ПК",
+        "PC設定のページ"),
+    'Lista de saves no menu do jogo': (
+        "Save list in the game's menu",
+        "Lista de partidas en el menú del juego",
+        "Liste des sauvegardes dans le menu du jeu",
+        "Spielstandliste im Spielmenü",
+        "Elenco dei salvataggi nel menu del gioco",
+        "Lista zapisów w menu gry",
+        "Список сохранений в меню игры",
+        "ゲームのメニューでのセーブ一覧"),
     'Otimizações recentes': (
         'Recent optimizations',
         'Optimizaciones recientes',
