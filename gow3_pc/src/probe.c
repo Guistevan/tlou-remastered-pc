@@ -146,6 +146,51 @@ static void describe_address(char *out, size_t size, uintptr_t address) {
     }
     snprintf(out,size,"%p",(void *)address);
 }
+/* Host code: unwound with the executable's unwind tables (optimized host code keeps no frame
+ * pointers); stops at guest code, which has none. */
+static void print_host_stack(const CONTEXT *c, int max_depth) {
+    char where[MAX_PATH+64];
+    CONTEXT ctx=*c;
+    for (int depth=0; depth<max_depth; ++depth) {
+        DWORD64 image_base=0;
+        PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(ctx.Rip,&image_base,NULL);
+        describe_address(where,sizeof(where),(uintptr_t)ctx.Rip);
+        fprintf(stderr,"  host #%d %s\n",depth,where);
+        if (!fn) {
+            if (depth) break;
+            /* A leaf function: its return address is on top of the stack. */
+            DWORD64 ret=0; SIZE_T got=0;
+            if (!ReadProcessMemory(GetCurrentProcess(),(void *)(uintptr_t)ctx.Rsp,&ret,sizeof(ret),&got) || got!=sizeof(ret)) break;
+            ctx.Rip=ret; ctx.Rsp+=8;
+            continue;
+        }
+        PVOID handler_data=NULL; DWORD64 establisher=0;
+        RtlVirtualUnwind(UNW_FLAG_NHANDLER,image_base,ctx.Rip,fn,&ctx,&handler_data,&establisher,NULL);
+        if (!ctx.Rip) break;
+    }
+}
+/* gow3 21 Nov 2026: a C++ exception thrown in host code on a guest thread and not caught there
+ * unwinds into guest frames, which have no unwind tables: the process ended with STATUS_GCC_THROW
+ * (exit code 541541187), only "libunwind: pc not in table" in the log and no report (the frame
+ * walk fails before any unhandled-exception filter runs). Vectored handlers see the throw before
+ * the unwinding, with the thrower's stack intact: the first throws are logged with their type and
+ * host stack (an exception caught later is harmless; the log says so). */
+#define STATUS_GCC_THROW_CODE 0x20474343u
+static volatile LONG cxx_throws;
+static void report_cxx_throw(const EXCEPTION_POINTERS *info) {
+    const LONG n=InterlockedIncrement(&cxx_throws);
+    if (n>8) return;
+    const EXCEPTION_RECORD *record=info->ExceptionRecord;
+    char type[256]="?";
+    if (record->NumberParameters>=1 &&
+        !gow3gpu_describe_cxx_exception((const void *)record->ExceptionInformation[0],type,sizeof(type)))
+        snprintf(type,sizeof(type),"unknown type");
+    fprintf(stderr,"C++ exception thrown (%s) on thread %lu (fine when caught; a crash right after "
+            "this ends with exit code 541541187)%s\n",type,GetCurrentThreadId(),
+            n==8 ? "; further throws not logged" : "");
+    print_host_stack(info->ContextRecord,24);
+    fflush(stderr);
+}
 static int fatal_reported;
 static LONG fatal_exception(EXCEPTION_POINTERS *info) {
     if (__atomic_exchange_n(&fatal_reported,1,__ATOMIC_ACQ_REL)) { Sleep(INFINITE); }
@@ -162,28 +207,7 @@ static LONG fatal_exception(EXCEPTION_POINTERS *info) {
     fprintf(stderr,"  rax=%016llx rbx=%016llx rcx=%016llx rdx=%016llx\n  rsi=%016llx rdi=%016llx rbp=%016llx rsp=%016llx\n",
             c->Rax,c->Rbx,c->Rcx,c->Rdx,c->Rsi,c->Rdi,c->Rbp,c->Rsp);
     if (gpu_enabled) gow3gpu_dump_guest_writes(info);
-    /* Host code: unwound with the executable's unwind tables (optimized host code keeps no frame
-     * pointers); stops at guest code, which has none. */
-    {
-        CONTEXT ctx=*c;
-        for (int depth=0; depth<40; ++depth) {
-            DWORD64 image_base=0;
-            PRUNTIME_FUNCTION fn=RtlLookupFunctionEntry(ctx.Rip,&image_base,NULL);
-            describe_address(where,sizeof(where),(uintptr_t)ctx.Rip);
-            fprintf(stderr,"  host #%d %s\n",depth,where);
-            if (!fn) {
-                if (depth) break;
-                /* A leaf function: its return address is on top of the stack. */
-                DWORD64 ret=0; SIZE_T got=0;
-                if (!ReadProcessMemory(GetCurrentProcess(),(void *)(uintptr_t)ctx.Rsp,&ret,sizeof(ret),&got) || got!=sizeof(ret)) break;
-                ctx.Rip=ret; ctx.Rsp+=8;
-                continue;
-            }
-            PVOID handler_data=NULL; DWORD64 establisher=0;
-            RtlVirtualUnwind(UNW_FLAG_NHANDLER,image_base,ctx.Rip,fn,&ctx,&handler_data,&establisher,NULL);
-            if (!ctx.Rip) break;
-        }
-    }
+    print_host_stack(c,40);
     /* rbp chain (guest and host code keep frame pointers). */
     uintptr_t rbp=(uintptr_t)c->Rbp;
     for (int depth=0; depth<24 && rbp; ++depth) {
@@ -495,6 +519,7 @@ static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
     const EXCEPTION_RECORD *record=info->ExceptionRecord;
     DWORD code=record->ExceptionCode;
     cover_current_stack(info->ContextRecord);
+    if (code==STATUS_GCC_THROW_CODE) { report_cxx_throw(info); return EXCEPTION_CONTINUE_SEARCH; }
     if (code==EXCEPTION_SINGLE_STEP && (info->ContextRecord->Dr6&0xf)) return watch_hit(info);
     if (code==EXCEPTION_ACCESS_VIOLATION && record->NumberParameters>=2) {
         /* GOW3_FAULT_TRACE=1: the first 64 access violations (diagnostics), written directly so

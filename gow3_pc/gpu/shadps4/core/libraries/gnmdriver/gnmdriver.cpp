@@ -1,7 +1,14 @@
 // SPDX-FileCopyrightText: Copyright 2024-2026 shadPS4 Emulator Project
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include <atomic>
+#include <cstdio>
+#include <cstdlib>
+#include <exception>
 #include <mutex>
+#include <new>
+#include <string>
+#include <typeinfo>
 
 #include "gow3_profiler.h"
 #include "gnm_error.h"
@@ -2222,8 +2229,45 @@ static inline s32 PatchFlipRequest(u32* cmdbuf, u32 size, u32 vo_handle, u32 buf
     return ORBIS_OK;
 }
 
-static inline s32 PerformSubmit(u32 count, const u32* dcb_gpu_addrs[], u32* dcb_sizes_in_bytes,
-                                const u32* ccb_gpu_addrs[], u32* ccb_sizes_in_bytes) {
+static s32 PerformSubmitUnguarded(u32 count, const u32* dcb_gpu_addrs[], u32* dcb_sizes_in_bytes,
+                                  const u32* ccb_gpu_addrs[], u32* ccb_sizes_in_bytes);
+
+// gow3 21 Nov 2026: a C++ exception from the submission (a loading crash, after
+// ErrorOutOfDeviceMemory) unwound into the game's frames, which have no unwind tables, and the
+// process ended with no report (exit code 541541187). It stops here with its type and message;
+// the loader has already logged where it was thrown ("C++ exception thrown ...").
+static s32 PerformSubmit(u32 count, const u32* dcb_gpu_addrs[], u32* dcb_sizes_in_bytes,
+                         const u32* ccb_gpu_addrs[], u32* ccb_sizes_in_bytes) {
+    const char* kind = "an unknown exception";
+    std::string message;
+    try {
+        // GOW3_TEST_SUBMIT_THROW=N (test of this report): the Nth submission throws bad_alloc.
+        static const long throw_at = [] {
+            const char* env = std::getenv("GOW3_TEST_SUBMIT_THROW");
+            return env ? std::strtol(env, nullptr, 10) : 0L;
+        }();
+        static std::atomic<long> submissions{0};
+        if (throw_at > 0 && ++submissions == throw_at) {
+            throw std::bad_alloc();
+        }
+        return PerformSubmitUnguarded(count, dcb_gpu_addrs, dcb_sizes_in_bytes, ccb_gpu_addrs,
+                                      ccb_sizes_in_bytes);
+    } catch (const std::bad_alloc& e) {
+        kind = "out of memory (std::bad_alloc: system memory or the page file is full)";
+        message = e.what();
+    } catch (const std::exception& e) {
+        kind = typeid(e).name();
+        message = e.what();
+    } catch (...) {
+    }
+    std::fprintf(stderr, "Fatal: GPU submission stopped by %s%s%s\n", kind,
+                 message.empty() ? "" : ": ", message.c_str());
+    std::fflush(nullptr);
+    std::_Exit(3);
+}
+
+static s32 PerformSubmitUnguarded(u32 count, const u32* dcb_gpu_addrs[], u32* dcb_sizes_in_bytes,
+                                  const u32* ccb_gpu_addrs[], u32* ccb_sizes_in_bytes) {
     if (DebugState.ShouldPauseInSubmit()) {
         DebugState.PauseGuestThreads();
     }

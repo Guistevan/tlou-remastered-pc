@@ -9,7 +9,13 @@
 #include "gow3_copy.h"
 #ifndef _WIN32
 #include <sys/resource.h>
+#else
+#include <windows.h>
 #endif
+#include <cstdio>
+#include <cstdlib>
+#include <cxxabi.h>
+#include <typeinfo>
 #include "gow3_toggles.h"
 #include <algorithm>
 #include <atomic>
@@ -562,6 +568,49 @@ extern "C" uintptr_t gow3gpu_resolve(const char* scoped_nid) {
 
 extern "C" int gow3gpu_handle_fault(void* ucontext, void* address) {
     return Core::Signals::Instance()->DispatchAccessViolation(ucontext, address) ? 1 : 0;
+}
+
+// gow3 21 Nov 2026: a C++ exception that reached guest frames (no unwind tables) ended the
+// process with STATUS_GCC_THROW and no report (a loading crash inside sceGnmSubmitCommandBuffers,
+// right after ErrorOutOfDeviceMemory). The loader's vectored handler sees every throw before it
+// unwinds and names its type with this. libc++abi on 64-bit: __cxa_exception ends with the
+// _Unwind_Exception, and its exceptionType is 80 bytes before it (5 pointers, 2 ints, 4 pointers).
+extern "C" int gow3gpu_describe_cxx_exception(const void* unwind_exception, char* out,
+                                              uint64_t size) {
+    if (!out || !size) {
+        return 0;
+    }
+    out[0] = 0;
+#if defined(_WIN32) && defined(_LIBCPP_VERSION) && UINTPTR_MAX == UINT64_MAX
+    if (!unwind_exception) {
+        return 0;
+    }
+    const void* type_pointer = nullptr;
+    SIZE_T got = 0;
+    if (!ReadProcessMemory(GetCurrentProcess(), static_cast<const char*>(unwind_exception) - 80,
+                           &type_pointer, sizeof(type_pointer), &got) ||
+        got != sizeof(type_pointer) || !type_pointer) {
+        return 0;
+    }
+    // A type_info lives in a loaded module (this executable or libc++.dll); anything else means
+    // the layout guess was wrong.
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExA(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            static_cast<LPCSTR>(type_pointer), &module) ||
+        !module) {
+        return 0;
+    }
+    const char* mangled = static_cast<const std::type_info*>(type_pointer)->name();
+    int status = -1;
+    char* demangled = abi::__cxa_demangle(mangled, nullptr, nullptr, &status);
+    std::snprintf(out, size_t(size), "%s", status == 0 && demangled ? demangled : mangled);
+    std::free(demangled);
+    return 1;
+#else
+    (void)unwind_exception;
+    return 0;
+#endif
 }
 
 extern "C" unsigned gow3gpu_symbol_count(void) {
