@@ -170,6 +170,8 @@ STARTUP = [
         ("Ritmo de quadros estável após engasgos", "GOW3_FLIP_REBASE", "1", "0", True),
         ("Aquecer só os 1.000 shaders mais recentes (menos RAM)", "GOW3_WARMUP_LIMIT", "1000", "0", True),
         ("Duas threads no aquecimento de shaders (NVIDIA)", "GOW3_WARMUP_THREADS", "2", "0", True),
+        ("Workers de jobs ociosos esperam 1 ms (não 10)", "TLOU_JOB_SLEEP_MS", "1", "10", True),
+        ("Enviar o quadro à GPU em partes (mais lento na GTX 1050 Ti)", "GOW3_EARLY_SUBMIT", "1", "0", False),
     ]),
 ]
 
@@ -941,6 +943,24 @@ DEBUG_TEXT = {
         'Dwa wątki do wstępnego ładowania shaderów (NVIDIA)',
         'Два потока для прогрева шейдеров (NVIDIA)',
         'シェーダー事前読み込みに2スレッド (NVIDIA)'),
+    'Workers de jobs ociosos esperam 1 ms (não 10)': (
+        'Idle job workers wait 1 ms (not 10)',
+        'Los workers de trabajos inactivos esperan 1 ms (no 10)',
+        'Les workers de tâches inactifs attendent 1 ms (pas 10)',
+        'Untätige Job-Worker warten 1 ms (nicht 10)',
+        'I worker dei job inattivi attendono 1 ms (non 10)',
+        'Bezczynne wątki zadań czekają 1 ms (nie 10)',
+        'Простаивающие обработчики задач ждут 1 мс (не 10)',
+        '待機中のジョブワーカーは1 ms待機 (10 msではなく)'),
+    'Enviar o quadro à GPU em partes (mais lento na GTX 1050 Ti)': (
+        'Send the frame to the GPU in parts (slower on a GTX 1050 Ti)',
+        'Enviar el fotograma a la GPU por partes (más lento en una GTX 1050 Ti)',
+        'Envoyer l’image au GPU par morceaux (plus lent sur une GTX 1050 Ti)',
+        'Frame in Teilen an die GPU senden (langsamer auf einer GTX 1050 Ti)',
+        'Inviare il fotogramma alla GPU a pezzi (più lento su una GTX 1050 Ti)',
+        'Wysyłaj klatkę do GPU w częściach (wolniej na GTX 1050 Ti)',
+        'Отправлять кадр на GPU частями (медленнее на GTX 1050 Ti)',
+        'フレームを分割してGPUに送信 (GTX 1050 Tiでは低速)'),
 }
 
 # Controls window: the keyboard and mouse maps the game reads from tlou.ini (key_map, mouse_map:

@@ -137,6 +137,19 @@ CHEATS = {
 # spinning (pause at 0xC87D65). The flag is treated as on in the worker loop, its re-check before
 # waiting and the submit path, as in the Uncharted ports of the same engine.
 JOB_SLEEP = [(0xC87D63, "7304", "EB04"), (0xC87D96, "741B", "9090"), (0xC873E1, "742D", "9090")]
+# 21 Nov 2026 (the Uncharted port's bc1fb58, from Mevlock's dev builds): after its re-check an
+# idle worker waits on the condition variable with a 10 ms timeout (mov edx, 10 at 0xC87D9F, the
+# call at 0xC87DAB) without looking at the queue again, and a job resumed by a counter wakes
+# nobody, so part of a frame's work could wait up to 10 ms (uneven frame starts). The wait is
+# TLOU_JOB_SLEEP_MS (default 1; 10: the game's).
+def job_sleep_wait_patch():
+    try:
+        ms = int(os.environ.get("TLOU_JOB_SLEEP_MS", "1"))
+    except ValueError:
+        ms = 1
+    if not 1 <= ms <= 127 or ms == 10:
+        return []
+    return [(0xC87D9F, "BA0A000000", "BA" + ms.to_bytes(4, "little").hex().upper())]
 # Every language in the game's menus (issue #156; TLOU_ALL_LANGUAGES=0 keeps the Americas set). The
 # executable holds one product config per regional release (product-config.cpp, registered at
 # 0x41340) and picks it by USER_DEFINED_PARAM_1 of param.sfo (552 here). Its language mask (+0x1b0)
@@ -676,7 +689,7 @@ def main():
     # TLOU_FIXES=none leaves out the fixes.
     patches = dict(FIXES) if os.environ.get("TLOU_FIXES") != "none" else {}
     if os.environ.get("TLOU_JOB_SLEEP") != "0":
-        patches["job-sleep"] = JOB_SLEEP
+        patches["job-sleep"] = JOB_SLEEP + job_sleep_wait_patch()
     if os.environ.get("TLOU_PRO_SHADOWS") != "0":
         patches["pro-shadows"] = PRO_SHADOWS
     if os.environ.get("TLOU_AMBIENT_SHADOWS") != "quarter":

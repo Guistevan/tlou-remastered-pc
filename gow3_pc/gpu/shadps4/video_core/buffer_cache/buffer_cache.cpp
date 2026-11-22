@@ -766,6 +766,9 @@ void BufferCache::RunGuestCopy(const Gow3Copy::Item& item) {
 
 // Small guest copies run on the recording thread (it spins for work: no wakeup, and it is
 // idle most of the time); PoolSmallCopies (toggle 524288) batches them for the copy threads.
+// gow3 21 Nov 2026: SpartanPort 86b69e1 runs them on the copy threads by default (+3.5% in God
+// of War III); here that lost the Vulkan device twice in two runs of the walking route (107 and
+// 127 s), so they stay on the recording thread.
 void BufferCache::SmallGuestCopy(const Gow3Copy::Item& item) {
     if (scheduler.IsRecordingDeferred() && !Gow3Toggle::Disabled(Gow3Toggle::PoolSmallCopies)) {
         scheduler.RecordHostCopy([item] { item.run(item); });

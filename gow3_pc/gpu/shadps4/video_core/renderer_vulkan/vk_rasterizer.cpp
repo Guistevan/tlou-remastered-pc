@@ -2241,9 +2241,53 @@ bool Rasterizer::FilterDrawPasses() const {
     return !(mode == Mode::Disable && (depth_copy || stencil_copy));
 }
 
+void Rasterizer::MaybeSubmitEarly() {
+    // gow3 21 Nov 2026 (the Uncharted port's d30d224, from the Bloodborne port's 5571243 and
+    // 453c6c5): a frame's work went to the GPU once, at its end, so the GPU began only after the
+    // whole frame was recorded. Now what is recorded goes at least every millisecond and 48
+    // draws. With the draw pipeline the submission is queued in order on the recording thread
+    // (as EndSubmission), so this thread does not wait for it. Off on AMD, where it was slower in
+    // the Bloodborne port (RX 9070 XT: 106 -> 90 FPS). GOW3_EARLY_SUBMIT=1 on, =force also on
+    // AMD, =0 off.
+    static const bool enabled = [this] {
+        const char* env = std::getenv("GOW3_EARLY_SUBMIT");
+        if (!env || (env[0] != '1' && std::strcmp(env, "force") != 0)) {
+            return false;
+        }
+        if (instance.GetVendorID() == 0x1002 && std::strcmp(env, "force") != 0) {
+            std::printf("Early submit: off on AMD (slower there; GOW3_EARLY_SUBMIT=force turns it "
+                        "on)\n");
+            return false;
+        }
+        std::printf("Early submit: the frame goes to the GPU in parts (every 1 ms and 48 draws)\n");
+        return true;
+    }();
+    if (!enabled) {
+        return;
+    }
+    // At least a millisecond of recording and a few draws per part: each submission costs a
+    // queue submit, so many small ones would cost more than the GPU gains.
+    constexpr u32 MinDraws = 48;
+    constexpr auto MinTime = std::chrono::microseconds(1000);
+    if (++draws_since_submit < MinDraws) {
+        return;
+    }
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last_early_submit < MinTime) {
+        return;
+    }
+    draws_since_submit = 0;
+    last_early_submit = now;
+    early_submits.fetch_add(1, std::memory_order_relaxed);
+    const u8 unused = 0;
+    RunInOrder([](Rasterizer& rasterizer, const u8*) { rasterizer.Flush(); }, &unused,
+               sizeof(unused));
+}
+
 void Rasterizer::Draw(bool is_indexed, u32 index_offset, const PreparedDraw* prepared) {
     RENDERER_TRACE;
     Gow3Stats::draws.fetch_add(1, std::memory_order_relaxed);
+    MaybeSubmitEarly();
 
     // gow3: with the draw pipeline this thread only selects the pipeline and hands the draw
     // to the recording thread (DrawRecord there); draws FilterDraw handles itself run here.
@@ -2944,6 +2988,7 @@ void Rasterizer::DrawIndirect(bool is_indexed, VAddr arg_address, u32 offset, u3
                               u32 max_count, VAddr count_address, u16 vertex_sgpr_offset,
                               u16 instance_sgpr_offset) {
     RENDERER_TRACE;
+    MaybeSubmitEarly();
     // gow3: like direct draws, handed to the recording thread after the pipeline selection
     // (else the GPU thread waited here for a whole frame of queued draws).
     const bool pipelined = UseDrawPipe() && FilterDrawPasses() &&
@@ -3641,9 +3686,11 @@ void Rasterizer::OnSubmit() {
         std::printf("Sizes: pipelines: %s; scheduler: %s\n", pipeline_cache.DebugSizes().c_str(),
                     scheduler.DebugSizes().c_str());
         std::printf("Sizes: rasterizer: %zu SRT plans, %zu keep-alive entries, %zu small GPU writes, "
-                    "%zu pending GPU writes (max %zu), %zu pending copy writes\n",
+                    "%zu pending GPU writes (max %zu), %zu pending copy writes, %llu early "
+                    "submits\n",
                     srt_plans.size(), pipe_keepalive.size(), small_gpu_writes.size(),
-                    pending_writes.size(), pending_writes_max, pending_copy_writes.size());
+                    pending_writes.size(), pending_writes_max, pending_copy_writes.size(),
+                    static_cast<unsigned long long>(early_submits.exchange(0)));
         pending_writes_max = pending_writes.size();
         std::fflush(stdout);
     }

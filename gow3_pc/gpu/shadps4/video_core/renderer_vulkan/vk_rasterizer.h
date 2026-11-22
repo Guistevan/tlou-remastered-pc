@@ -131,6 +131,12 @@ public:
     /// Returns true when the task was handed to the recording thread (not run yet).
     bool RunInOrder(OrderedTask task, const void* data, u32 size,
                     u64 toggle = Gow3Toggle::PipelinedTasks);
+    /// gow3: GOW3_EARLY_SUBMIT=1: the frame's work goes to the GPU in parts while it is
+    /// recorded, so the GPU starts drawing before the frame is complete (GPU command thread).
+    void MaybeSubmitEarly();
+    u32 draws_since_submit = 0;
+    std::chrono::steady_clock::time_point last_early_submit{};
+    std::atomic<u64> early_submits{0};
     /// Stage A: the draw pipe position after the last handed-over packet, and whether the
     /// recording thread has run everything before a position.
     [[nodiscard]] u64 DrawPipeHead() const {
