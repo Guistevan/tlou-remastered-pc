@@ -543,7 +543,7 @@ static struct {
 } save_dialog;
 /* Load Game on the game's menu page (runtime_menu_saves.c): the rows it shows, by name. */
 static struct { char dirs[33][32]; int has_new, type; } save_page;
-static char save_labels[33][200], save_icons[33][720], save_rows[33][160], save_chapters[33][128];
+static char save_labels[33][200], save_icons[33][720], save_rows[33][160], save_chapters[33][320];
 static void save_label(char *out, size_t size, const char *dir) {
     unsigned char param[RUNTIME_SAVE_PARAM_SIZE];
     if (runtime_savedata_param(USER_ID,dir,param)) { snprintf(out,size,"%s",dir); return; }
@@ -574,13 +574,14 @@ static void save_row(char *out, size_t size, const char *dir) {
     const char *title=(const char *)param, *subtitle=(const char *)param+128;
     snprintf(out,size,"%.60s - %s",subtitle[0] ? subtitle : title[0] ? title : dir,when);
 }
-/* The chapter a save was made in: the first line of its detail ("Sewers" in the game's language). */
+/* A save's detail, in the game's language: the chapter it was made in ("Sewers"), then the
+ * completion and play time ("52% Complete (9h3min)") and the collectibles, one per line. */
 static void save_chapter(char *out, size_t size, const char *dir) {
     unsigned char param[RUNTIME_SAVE_PARAM_SIZE];
     out[0]=0;
     if (runtime_savedata_param(USER_ID,dir,param)) return;
     const char *detail=(const char *)param+256;
-    size_t n=0; while (n<size-1 && n<1024 && detail[n] && detail[n]!='\n') ++n;
+    size_t n=0; while (n<size-1 && n<1024 && detail[n]) ++n;
     memcpy(out,detail,n); out[n]=0;
 }
 static ABI int32_t save_init(void) { return dialog_init(2); }

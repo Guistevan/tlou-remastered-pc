@@ -26,6 +26,8 @@ static char labels[MAX_ROWS][LABEL_SIZE], names[MAX_ROWS][LABEL_SIZE], dates[MAX
  * the game's Chapters list it belongs to (-1: none found; AREA_UNKNOWN: not looked up yet). */
 enum { AREA_UNKNOWN = -2 };
 static char chapters[MAX_ROWS][LABEL_SIZE];
+/* The rest of its detail: completion and play time, collectibles (lines). */
+static char details[MAX_ROWS][LABEL_SIZE * 2];
 static uint32_t subchapter_text[MAX_ROWS];
 static int areas[MAX_ROWS];
 /* The game had no picture for the row's area (its Chapters art is not loaded, as in the pause
@@ -186,7 +188,13 @@ int runtime_menu_saves_open(int type, int count, int has_new, const char *const 
         const char *dash = strstr(labels[i], " - ");
         snprintf(names[i], LABEL_SIZE, "%.*s", dash ? (int)(dash - labels[i]) : (int)strlen(labels[i]), labels[i]);
         snprintf(dates[i], LABEL_SIZE, "%s", dash ? dash + 3 : "");
-        snprintf(chapters[i], LABEL_SIZE, "%s", row_chapters && row_chapters[i] ? row_chapters[i] : "");
+        /* The detail: its first line the chapter, the others shown under the place. */
+        const char *detail = row_chapters && row_chapters[i] ? row_chapters[i] : "";
+        const char *rest = strchr(detail, '\n');
+        snprintf(chapters[i], LABEL_SIZE, "%.*s", rest ? (int)(rest - detail) : (int)strlen(detail), detail);
+        snprintf(details[i], sizeof(details[i]), "%s", rest ? rest + 1 : "");
+        for (size_t n = strlen(details[i]); n && (details[i][n - 1] == '\n' || details[i][n - 1] == '\r'); --n)
+            details[i][n - 1] = 0;
         areas[i] = AREA_UNKNOWN;
         atomic_store(&no_game_picture[i], 0);
     }
@@ -249,7 +257,7 @@ static atomic_int vtable_ready;
 enum { MAX_LIST_SITES = 8 };
 static uintptr_t list_sites[MAX_LIST_SITES];
 static int list_site_count;
-static char panel_text[LABEL_SIZE * 4];
+static char panel_text[LABEL_SIZE * 8];
 static void place_of(int row, char *out, size_t size);
 
 static int is_list_site(uintptr_t site, int index) {
@@ -268,11 +276,15 @@ static ABI __attribute__((noinline)) const char *row_label(void *self, int index
     if (index == 0 && atomic_load(&new_first)) return part == 0 ? runtime_menu_pc_new_save_text() : "";
     if (part != 0) return "";
     if (is_list_site((uintptr_t)__builtin_return_address(0), index) || !dates[index][0]) return names[index];
-    /* Name, where the save is (area - sub-chapter), date. */
+    /* Name, where the save is (area - sub-chapter), the detail's other lines (completion and play
+     * time, collectibles), date. */
     char place[LABEL_SIZE * 2];
     place_of(index, place, sizeof(place));
-    if (place[0]) snprintf(panel_text, sizeof(panel_text), "%s\n%s\n%s", names[index], place, dates[index]);
-    else snprintf(panel_text, sizeof(panel_text), "%s\n%s", names[index], dates[index]);
+    size_t at = (size_t)snprintf(panel_text, sizeof(panel_text), "%s", names[index]);
+    if (place[0] && at < sizeof(panel_text)) at += (size_t)snprintf(panel_text + at, sizeof(panel_text) - at, "\n%s", place);
+    if (details[index][0] && at < sizeof(panel_text))
+        at += (size_t)snprintf(panel_text + at, sizeof(panel_text) - at, "\n%s", details[index]);
+    if (at < sizeof(panel_text)) snprintf(panel_text + at, sizeof(panel_text) - at, "\n%s", dates[index]);
     return panel_text;
 }
 
@@ -844,7 +856,52 @@ static const struct { const char *name; int area; uint32_t text; } subchapters[]
     {"Kapanış", 11, 0x9331825bu},
     {"Épilogue", 11, 0x9331825bu},
     {"Epilogo", 11, 0x9331825bu},
+    /* Not sub-chapters: a save after the credits says COMPLETE (Jackson's picture, the last area),
+     * the first one of a new game New Game Data (the Prologue's). */
+    {"COMPLETE", 11, 0x4a0d5edcu},
+    {"New Game Data", 0, 0xe9610985u},
+    {"TERMINÉ", 11, 0x4a0d5edcu},
+    {"Nouvelles données de jeu", 0, 0xe9610985u},
+    {"COMPLETATO", 11, 0x4a0d5edcu},
+    {"Nuovi dati di gioco", 0, 0xe9610985u},
+    {"ABGESCHLOSSEN", 11, 0x4a0d5edcu},
+    {"Neue Spieldaten", 0, 0xe9610985u},
+    {"COMPLETADO", 11, 0x4a0d5edcu},
+    {"Nuevos datos de partida", 0, 0xe9610985u},
+    {"GENNEMFØRT", 11, 0x4a0d5edcu},
+    {"Nye spildata", 0, 0xe9610985u},
+    {"CONCLUÍDO", 11, 0x4a0d5edcu},
+    {"Novos dados de jogo", 0, 0xe9610985u},
+    {"VOLTOOID", 11, 0x4a0d5edcu},
+    {"Nieuwe speldata", 0, 0xe9610985u},
+    {"完了", 11, 0x4a0d5edcu},
+    {"はじめから", 0, 0xe9610985u},
+    {"완료", 11, 0x4a0d5edcu},
+    {"새 게임 데이터", 0, 0xe9610985u},
+    {"VALMIS", 11, 0x4a0d5edcu},
+    {"Uusia pelitietoja", 0, 0xe9610985u},
+    {"FULLFØRT", 11, 0x4a0d5edcu},
+    {"Nye spilldata", 0, 0xe9610985u},
+    {"KLAR", 11, 0x4a0d5edcu},
+    {"Nya speldata", 0, 0xe9610985u},
+    {"完成", 11, 0x4a0d5edcu},
+    {"新的遊戲資料", 0, 0xe9610985u},
+    {"ГОТОВО", 11, 0x4a0d5edcu},
+    {"Новые игровые данные", 0, 0xe9610985u},
+    {"ZAKOŃCZONO", 11, 0x4a0d5edcu},
+    {"Nowe dane gry", 0, 0xe9610985u},
+    {"COMPLETO", 11, 0x4a0d5edcu},
+    {"Datos de juego nuevo", 0, 0xe9610985u},
+    {"ΟΛΟΚΛΗΡΩΘΗΚΕ", 11, 0x4a0d5edcu},
+    {"Δεδομένα νέου παιχνιδιού", 0, 0xe9610985u},
+    {"DOKONČENO", 11, 0x4a0d5edcu},
+    {"Nová herní data", 0, 0xe9610985u},
+    {"TAMAMLANDI", 11, 0x4a0d5edcu},
+    {"Yeni Oyun Verisi", 0, 0xe9610985u},
 };
+/* Their place line is that text alone, without an area. */
+#define TEXT_COMPLETE 0x4a0d5edcu
+#define TEXT_NEW_GAME_DATA 0xe9610985u
 
 static int area_of(int row) {
     if (areas[row] != AREA_UNKNOWN) return areas[row];
@@ -876,7 +933,8 @@ static void place_of(int row, char *out, size_t size) {
     const char *area_name = runtime_menu_pc_game_text(area_texts[area]);
     const char *sub_name = subchapter_text[row] ? runtime_menu_pc_game_text(subchapter_text[row]) : NULL;
     if (!sub_name || !sub_name[0]) sub_name = chapters[row];
-    if (area_name && area_name[0] && strcmp(area_name, sub_name)) snprintf(out, size, "%s - %s", area_name, sub_name);
+    const int alone = subchapter_text[row] == TEXT_COMPLETE || subchapter_text[row] == TEXT_NEW_GAME_DATA;
+    if (!alone && area_name && area_name[0] && strcmp(area_name, sub_name)) snprintf(out, size, "%s - %s", area_name, sub_name);
     else snprintf(out, size, "%s", sub_name);
 }
 

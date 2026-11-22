@@ -17,7 +17,7 @@ void runtime_menu_saves_page_added(void);
 /* The menu update hook's helper (menu, the update's esi). */
 ABI void runtime_menu_saves_update(void *menu, uint32_t unused);
 /* A list dialog's first opening (type 1 save, 2 load; delete keeps the overlay list): its rows go
- * to the page (labels UTF-8, pictures PNG paths or NULL, chapters the saves' sub-chapter names);
+ * to the page (labels UTF-8, pictures PNG paths or NULL, chapters the saves' details, the sub-chapter name first);
  * 1 when the page will show them (the dialog is then answered "cancelled"), 0 to use the overlay
  * list. */
 int runtime_menu_saves_open(int type, int count, int new_first, const char *const *labels,
