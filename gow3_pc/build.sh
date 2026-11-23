@@ -130,4 +130,6 @@ if [[ ${1:-} == --test ]]; then
     # platform-neutral.
     "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -I. -Isrc tests/test_menu_exit_hook.c -o out/menu-exit-hook-test
     out/menu-exit-hook-test
+    "$CC" -std=c11 -O2 -g -Wall -Wextra -Werror -I. -Isrc tests/test_near_gap.c -o out/near-gap-test
+    out/near-gap-test
 fi

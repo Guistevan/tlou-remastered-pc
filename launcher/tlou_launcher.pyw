@@ -2228,10 +2228,20 @@ def recycle(paths):
     if not paths:
         return True
     if sys.platform != "win32":
-        # No Recycle Bin: these are the player's regenerable shader and pipeline caches.
+        # The desktop's trash (gio, freedesktop.org Trash spec) when there is one; without it
+        # these are deleted, as they are the player's regenerable shader and pipeline caches.
         import shutil
 
+        gio = shutil.which("gio")
+        if gio:
+            try:
+                if subprocess.run([gio, "trash", "--", *map(str, paths)], capture_output=True).returncode == 0:
+                    return True
+            except OSError:
+                pass
         for path in paths:
+            if not Path(path).exists():
+                continue   # already in the trash (gio moved part of the list)
             try:
                 if Path(path).is_dir():
                     shutil.rmtree(path)
@@ -2895,10 +2905,7 @@ class Launcher(tk.Tk):
                                   for size in RESOLUTIONS + ([res] if res not in RESOLUTIONS else [])}
         self.resolution = self.choice(panel, row + 1, self.t("resolution"), list(self.resolution_labels),
                                       resolution_label(res))
-        # The game's engine is 30 fps frame-based (TLOU Remastered PS4): at 60 presented frames
-        # every animation runs at twice speed. POSIX defaults to the matching 30; Windows keeps
-        # its 60 (players pick 30 in the menu; README, Frame pacing).
-        fps = ini.get("fps_limit", "30" if sys.platform != "win32" else "60")
+        fps = ini.get("fps_limit", "60")
         self.fps = self.choice(panel, row + 2, self.t("fps"), FPS if fps in FPS else FPS + [fps], fps)
         self.upscaler_labels = self.labels(UPSCALERS)
         self.upscaler = self.choice(panel, row + 3, self.t("upscaler"), list(self.upscaler_labels),

@@ -16,6 +16,7 @@
 #include "cheat_hook.h"
 #include "actor_hook.h"
 #include "damage_hook.h"
+#include "near_gap.h"
 #include "runtime_mouselook.h"
 #include "runtime_gamesettings.h"
 #include "gpu/gow3gpu.h"
@@ -609,8 +610,9 @@ static void fault(int sig, siginfo_t *info, void *context) {
     ucontext_t *uc = context;
     const uintptr_t rip = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
     /* GPU page tracking (write-protected guest pages) is resolved first, except during a
-     * speculative read: see vectored_fault. On the way, the kernel's signal frame is pushed
-     * below rsp: the red-zone stubs keep those 128 bytes out of the guest's reach. */
+     * speculative read: see vectored_fault. (Linux puts its signal frame below the 128-byte red
+     * zone already; the red-zone table is loaded here for its ISA emulation, MOVBE/AVX2/F16C on
+     * CPUs without them, and the stats count its stubs the same way.) */
     if (gpu_enabled && sig == SIGSEGV && !runtime_fault_recover) {
         if (gow3gpu_handle_fault(context, info->si_addr)) {
             note_red_zone_fault(rip);
@@ -899,31 +901,41 @@ static unsigned char *allocate_near_image(uint64_t size) {
      * holds only the host executable, the image and the glibc heap; the gaps between them stay
      * free for this process. MAP_FIXED_NOREPLACE only takes a gap that is still unmapped when
      * called, so nothing in use is ever replaced. */
-    (void)size;
-    const uint64_t span = UINT64_C(0x60000000);
-    const int64_t lo = (int64_t)(uintptr_t)image > (int64_t)span ? (int64_t)(uintptr_t)image - (int64_t)span : 0;
-    const int64_t hi = (int64_t)(uintptr_t)image + (int64_t)size + (int64_t)span;
+    const uint64_t span = UINT64_C(0x60000000), min_addr = 0x10000;   /* vm.mmap_min_addr */
+    const uint64_t lo = (uint64_t)(uintptr_t)image > span + min_addr ? (uint64_t)(uintptr_t)image - span : min_addr;
+    const uint64_t hi = (uint64_t)(uintptr_t)image + size + span;
     FILE *maps = fopen("/proc/self/maps", "r");
     if (!maps) return NULL;
     unsigned char *found = NULL;
-    char line[128];
-    uint64_t prev_end = 0;
-    int first = 1;
-    while (!found && fgets(line, sizeof line, maps)) {
+    char line[256];
+    uint64_t prev_end = lo;   /* the free space below the first mapping counts too */
+    int line_start = 1;
+    while (!found && prev_end < hi && fgets(line, sizeof line, maps)) {
+        /* A mapped file's path can be longer than the buffer: only a line's own start holds
+         * its range, the rest of a long line is skipped. */
+        const int at_start = line_start;
+        line_start = strchr(line, '\n') != NULL;
         uint64_t a, b;
-        if (sscanf(line, "%lx-%lx", &a, &b) != 2) continue;
-        if (!first && a - prev_end >= page_size && (int64_t)a > lo && (int64_t)prev_end < hi) {
-            const uint64_t start = (prev_end + page_size - 1) & ~(uint64_t)(page_size - 1);
-            if (start + page_size <= a) {
-                void *p = mmap((void *)start, page_size, PROT_READ | PROT_WRITE,
+        if (!at_start || sscanf(line, "%" SCNx64 "-%" SCNx64, &a, &b) != 2) continue;
+        if (a > prev_end) {
+            const uint64_t start = near_gap_page(prev_end, a, lo, hi, page_size);
+            if (start) {
+                void *p = mmap((void *)(uintptr_t)start, page_size, PROT_READ | PROT_WRITE,
                                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
                 if (p != MAP_FAILED) found = p;
             }
         }
-        first = 0;
         if (b > prev_end) prev_end = b;
     }
     fclose(maps);
+    if (!found && prev_end < hi) {   /* free up to the window's top, past the last mapping read */
+        const uint64_t start = near_gap_page(prev_end, hi, lo, hi, page_size);
+        if (start) {
+            void *p = mmap((void *)(uintptr_t)start, page_size, PROT_READ | PROT_WRITE,
+                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+            if (p != MAP_FAILED) found = p;
+        }
+    }
     return found;
 #endif
 }
@@ -1195,24 +1207,27 @@ static void apply_patches(const char *path, Segment *segments, uint64_t ns, cons
     fclose(f);
     printf("Patches: %" PRIu64 " writes, %" PRIu64 " bytes applied, %" PRIu64 " pointers rebased\n",count,bytes,rebased);
 }
-/* The game's TSC divisor (TLOU Remastered eboot, 0x153D958). The engine turns raw RDTSC into
- * milliseconds by dividing by this qword; the value burned into the executable is 3,000,000
- * ticks per ms - the PS4's 3.0 GHz TSC - and the game never writes it (there is no
- * calibration). The host's RDTSC runs at the host's own frequency, so the whole game clock
- * (delta time, animation, physics, audio) runs host_TSC / 3.0 GHz times fast: about 1.34x on a
- * 4 GHz CPU, which the player sees as the "2x speed" bug that capping the presentation to 30
- * fps does not fix. Measure the host frequency and set the divisor to it.
- * Linux only: the Windows build is left byte for byte as it was (the port's compatibility
- * guarantee). GOW3_TSC_PATCH=0 keeps the game's 3.0 GHz default. */
+/* A TSC divisor of the game (TLOU Remastered eboot 1.11, 0x153D958): about 150 inline
+ * "rdtsc; (now - start) / [0x153D958]" sequences turn raw TSC deltas into milliseconds with
+ * this qword, burned in as 3,000,000 ticks per ms (the PS4's 3.0 GHz TSC). They are elapsed-time
+ * checks (the renderer's frame watchdog at 0xB3D7E3 is one, FIXES["frame-timeout"] in
+ * tools/probe_tlou.py); on a host whose TSC is not 3.0 GHz their milliseconds are off by
+ * host/3.0 GHz, on every platform.
+ * They are not the game's speed: the Windows build runs at normal speed with this divisor
+ * untouched. The game's clock follows sceKernelGetTscFrequency, which must match the inline
+ * RDTSC rate: tools/probe_tlou.py sets GOW3_NATIVE_TSC=1 for that, and before this port the
+ * POSIX runtime ignored it (1 GHz reported against a 4 GHz rdtsc: the Linux "fast game").
+ * GOW3_TSC_PATCH=1 (opt-in, POSIX) sets the divisor to the measured host rate anyway, to make
+ * those checks' milliseconds real; the default leaves the image as on Windows. */
 #ifndef _WIN32
 static void calibrate_guest_tsc(unsigned char *image, Segment *segments, uint64_t ns) {
+    const char *on = getenv("GOW3_TSC_PATCH");
+    if (!on || strcmp(on, "1")) return;
     const uint64_t at = 0x153D958;
     if (!mapped(segments, ns, at, 8)) { printf("TSC: 0x%llx is not in this image; left as is\n", (unsigned long long)at); return; }
     uint64_t before;
     memcpy(&before, image + at, 8);
     if (before != 3000000) { printf("TSC: divisor already %llu (the PS4's 3,000,000 expected); left as is\n", (unsigned long long)before); return; }
-    const char *off = getenv("GOW3_TSC_PATCH");
-    if (off && !strcmp(off, "0")) return;
     struct timespec t0, t1, sleep = {0, 125000000};
     clock_gettime(CLOCK_MONOTONIC, &t0);
     const uint64_t begin = __rdtsc();
@@ -1225,7 +1240,7 @@ static void calibrate_guest_tsc(unsigned char *image, Segment *segments, uint64_
     if (hz < 1000000000ULL || hz > 20000000000ULL) { printf("TSC: %.2f GHz is implausible; left as is\n", (double)hz / 1e9); return; }
     const uint64_t per_ms = (hz + 500) / 1000;
     memcpy(image + at, &per_ms, 8);
-    printf("Runtime: guest TSC divisor %llu -> %llu (host TSC %.3f GHz; the game's 3.0 GHz default ran %.3fx fast)\n",
+    printf("Runtime: guest TSC divisor %llu -> %llu (host TSC %.3f GHz; GOW3_TSC_PATCH, the game's elapsed-time checks ran %.3fx fast)\n",
            (unsigned long long)before, (unsigned long long)per_ms, (double)hz / 1e9, (double)per_ms / (double)before);
 }
 #endif

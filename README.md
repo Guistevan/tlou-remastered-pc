@@ -57,7 +57,7 @@ that is not fixed yet (a workaround is under Known issues), and with rough edges
 | | |
 |---|---|
 | **Frame rate** | On a laptop with a Core i7-8750H and a GTX 1050 Ti Mobile (4 GB), 60 FPS in light areas and about 40-44 FPS in the heaviest area tested, where the CPU side of the renderer is the limit (the draw recording thread at about 87%): lowering the resolution barely helps there. |
-| **Frame pacing** | Frame times swing while the game runs below its limit, and a fixed 30 FPS limit (launcher, or the in-game menu) makes motion clearly more even. For The Last of Us Remastered specifically, 30 FPS is not just smoother but the *correct* rate: its PS4 engine is 30 fps frame-based (one 1/30 step per presented frame), so any limit above 30 makes the game run faster, not smoother — the limit now defaults to 30 on Linux (Windows keeps 60, pick 30 in the menu as before). |
+| **Frame pacing** | Frame times swing while the game runs below its limit, and a fixed 30 FPS limit (launcher, or the in-game menu) makes motion clearly more even. |
 | **Not available yet** | A true mouse camera (the mouse drives the right stick instead, though no longer capped at the stick's top speed), the draw distance sliders and keyboard button prompts, which need the game's own camera code, settings block and prompt textures to be located. |
 
 ### ⚠️ Known issues
