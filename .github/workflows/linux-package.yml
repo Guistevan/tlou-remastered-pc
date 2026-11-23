@@ -1,0 +1,107 @@
+# The Linux package of a release (DRAFT: waits for tools/package_linux.sh).
+#
+# The maintainer publishes each release from Windows (tools/publish_release.py, with the Windows
+# package). Publishing it starts this workflow, which builds the Linux runtime in an Arch Linux
+# container at the release's tag and attaches TLOU-Remastered-linux.zip to the same release: the
+# name launcher/updater.py looks for on Linux.
+#
+# tools/package_linux.sh does not exist yet (the Linux port's packaging is a follow-up of PR #222).
+# Until it does, this workflow only builds the runtime at the tag, a check that the Linux build
+# still compiles, and attaches nothing. The script's contract:
+#   - run from the repository root after gow3_pc/build.sh, with --no-build;
+#   - write dist/TLOU-Remastered-linux.zip holding every path of updater.REQUIRED on Linux
+#     (checked below), VERSION from tools/VERSION.
+#
+# Run it by hand (Actions > Linux package > Run workflow) to rebuild a release's package: it
+# then replaces the asset that is already there.
+name: Linux package
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (v0.4.1, ...)"
+        required: true
+
+permissions:
+  contents: write   # attach the asset to the release
+
+concurrency:
+  group: linux-package-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      ASSET: dist/TLOU-Remastered-linux.zip
+    steps:
+      - name: Build tools and libraries (README, Building > Linux)
+        run: |
+          pacman -Syu --noconfirm --needed git cmake ninja pkgconf python zip unzip github-cli \
+            vulkan-headers vulkan-icd-loader vulkan-memory-allocator \
+            sdl3 ffmpeg fmt boost robin-map xxhash libx11 zydis glslang
+
+      - name: Check out the release's tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          submodules: recursive
+          fetch-depth: 1
+
+      - name: Build the runtime
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          bash gow3_pc/build.sh
+          ls -la gow3_pc/out/gow3-probe
+
+      - name: Package
+        id: package
+        run: |
+          if [ ! -f tools/package_linux.sh ]; then
+            echo "::notice::tools/package_linux.sh is not in $TAG yet: the runtime built, no Linux package attached."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          bash tools/package_linux.sh --no-build
+          echo "ready=true" >> "$GITHUB_OUTPUT"
+
+      - name: Check the package against the updater
+        if: steps.package.outputs.ready == 'true'
+        run: |
+          python3 - "$ASSET" <<'EOF'
+          import sys, zipfile
+          sys.path.insert(0, "launcher")
+          import updater
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              names = set(z.namelist())
+          # A package may hold its files at the top or inside one folder.
+          tops = {n.split("/", 1)[0] + "/" for n in names if "/" in n}
+          prefixes = [""] + (list(tops) if len(tops) == 1 else [])
+          found = {r: next((p + r for p in prefixes if p + r in names), None) for r in updater.REQUIRED}
+          missing = [r for r, name in found.items() if name is None]
+          if missing:
+              sys.exit("missing from the package: " + ", ".join(missing))
+          # The updater restores each file's mode from the zip: programs must be stored executable.
+          with zipfile.ZipFile(sys.argv[1]) as z:
+              not_exec = [r for r in ("TLOU-Launcher", "TLOU-Game", "python/bin/python3", "gow3_pc/out/gow3-probe")
+                          if not (z.getinfo(found[r]).external_attr >> 16) & 0o100]
+          if not_exec:
+              sys.exit("not stored executable in the zip: " + ", ".join(not_exec))
+          print(len(names), "files; every path the updater requires is there")
+          EOF
+          version=$(cat tools/VERSION)
+          [ "v$version" = "$TAG" ] || echo "::warning::tools/VERSION is $version, the tag is $TAG"
+
+      - name: Attach to the release
+        if: steps.package.outputs.ready == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          replace=""
+          [ "${{ github.event_name }}" = workflow_dispatch ] && replace=--clobber
+          gh release upload "$TAG" "$ASSET" --repo "$GITHUB_REPOSITORY" $replace
