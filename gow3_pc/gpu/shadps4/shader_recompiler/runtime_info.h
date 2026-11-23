@@ -302,6 +302,19 @@ inline u32& WorkgroupSplitHostSize() {
     static u32 size = 64;
     return size;
 }
+/// gow3 23 Nov 2026 (GOW3_FLATBUF_UBO=1, particles and water in The Last of Us): the shader's
+/// flattened user data (srt_flatbuf, the PS4's scalar constant reads) as a uniform buffer rather
+/// than a storage buffer. A particle pixel shader reads it ~64 times a pixel at constant offsets;
+/// the PS4 reads them once a wave into scalar registers, a storage buffer once a pixel through
+/// the L1 cache, a uniform buffer through the constant cache. Set by the pipeline cache (needs
+/// uniformBufferStandardLayout for the 4-byte array stride); binaries get their own cache name.
+inline bool& FlatbufUniform() {
+    static bool on = false;
+    return on;
+}
+/// The declared size of the flat buffer's uniform block (flat buffers hold a few hundred bytes;
+/// the host binds at most the device's maxUniformBufferRange, 64 KiB on NVIDIA and AMD).
+constexpr u32 FlatbufUniformBytes = 65536;
 /// Whether a dispatch of this size would be split (before the shader's own eligibility).
 inline bool WorkgroupSplitSize(const std::array<u32, 3>& size) {
     return WorkgroupSplitOn() && size[0] * size[1] * size[2] > 256;

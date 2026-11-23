@@ -115,7 +115,7 @@ struct FinishOnExit {
 constexpr static auto SpirvVersion1_6 = 0x00010600U;
 
 constexpr static std::array DescriptorHeapSizes = {
-    vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 512},
+    vk::DescriptorPoolSize{vk::DescriptorType::eUniformBuffer, 2048}, // gow3: flat buffers
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageBuffer, 8192},
     vk::DescriptorPoolSize{vk::DescriptorType::eSampledImage, 8192},
     vk::DescriptorPoolSize{vk::DescriptorType::eStorageImage, 1024},
@@ -518,6 +518,13 @@ PipelineCache::PipelineCache(const Instance& instance_, Scheduler& scheduler_,
                 Shader::WorkgroupSplitHostSize() = size;
             }
         }
+        // gow3 23 Nov 2026 (FlatbufUniform, runtime_info.h): opt-in while it is measured.
+        const char* ubo_env = std::getenv("GOW3_FLATBUF_UBO");
+        Shader::FlatbufUniform() = ubo_env && ubo_env[0] == '1' &&
+                                   instance.IsUniformBufferStandardLayoutSupported();
+        std::printf("GPU: shader constants (flat user data) in %s buffers (GOW3_FLATBUF_UBO=%s)\n",
+                    Shader::FlatbufUniform() ? "uniform" : "storage",
+                    Shader::FlatbufUniform() ? "0: storage" : "1: uniform");
         if (Shader::WorkgroupSplitOn()) {
             std::printf("GPU: compute workgroups above 256 threads run as workgroups of %u where "
                         "their threads share nothing (GOW3_WORKGROUP_SPLIT=0: whole, "

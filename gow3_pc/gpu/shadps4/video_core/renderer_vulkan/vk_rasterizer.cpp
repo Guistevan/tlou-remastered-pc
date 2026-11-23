@@ -2636,6 +2636,23 @@ void Rasterizer::DrawRecord(const GraphicsPipeline* pipeline, const PreparedDraw
         Flush();
         NoteFrameStart();
     }
+    // gow3 22 Nov 2026: games that never draw into their display buffers (The Last of Us) give
+    // the GPU profiler no frame end. GOW3_GPU_PROFILE_FRAME=<pixel shader hash, hex> names a
+    // pass that runs once per frame; its first draw closes the frame.
+    else if (GpuProfiler::Get()) {
+        static const u64 frame_ps = [] {
+            const char* value = std::getenv("GOW3_GPU_PROFILE_FRAME");
+            return value ? std::strtoull(value, nullptr, 16) : 0ull;
+        }();
+        const auto* ps_stage = pipeline->GetStages()[u32(Shader::SwStage::Fragment)];
+        const bool marker = frame_ps && ps_stage && (ps_stage->pgm_hash & 0xffffffffull) ==
+                                                         (frame_ps & 0xffffffffull);
+        if (marker && !profile_frame_marker) {
+            Flush();
+            NoteFrameStart();
+        }
+        profile_frame_marker = marker;
+    }
     bind_prepared = used_prepared;
     motion_draw = pipeline->GetGraphicsKey().motion_vectors;
     motion_geometry = 0;
@@ -5658,7 +5675,11 @@ static void FixAimFocusCentre(Core::MemoryManager* memory, VideoCore::BufferCach
 void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* prepared,
                              Shader::Backend::Bindings& binding,
                              Shader::PushData& push_data, u32& write_index) {
-    const u64 alignment = instance.StorageMinAlignment();
+    // gow3 23 Nov 2026: uniform buffer offsets too (the flat buffer under FlatbufUniform).
+    const u64 alignment = Shader::FlatbufUniform()
+                              ? std::max<u64>(instance.StorageMinAlignment(),
+                                              instance.UniformMinAlignment())
+                              : instance.StorageMinAlignment();
     const bool compute_stage = stage.hw_stage == Shader::HwStage::Compute;
     ClothTrace(stage.pgm_hash, ~0u, 0, 0, false, compute_stage);
     for (u32 buffer_index = 0; buffer_index < stage.buffers.size(); ++buffer_index) {
@@ -6377,7 +6398,13 @@ void Rasterizer::BindBuffers(const Shader::Info& stage, const PreparedStage* pre
         set_write.dstBinding = binding.unified++;
         set_write.dstArrayElement = 0;
         set_write.descriptorCount = 1;
-        set_write.descriptorType = vk::DescriptorType::eStorageBuffer;
+        set_write.descriptorType = BufferDescriptorType(desc);
+        if (set_write.descriptorType == vk::DescriptorType::eUniformBuffer) {
+            auto& info = buffer_infos.back();
+            info.range = std::min<vk::DeviceSize>(
+                info.range, std::min<u64>(instance.MaxUniformBufferRange(),
+                                          Shader::FlatbufUniformBytes));
+        }
         set_write.pBufferInfo = &buffer_infos.back();
         ++binding.buffer;
     }
@@ -8729,7 +8756,13 @@ namespace Vulkan {
 
 void Rasterizer::MarkPass(const GraphicsPipeline* pipeline, const RenderState& state) {
     auto* profiler = GpuProfiler::Get();
-    if (!profiler || !scheduler.WillBeginRendering(state)) {
+    // gow3 22 Nov 2026: GOW3_GPU_PROFILE_DRAWS=1 marks every draw, not only render pass starts
+    // (each mark ends the render pass, so the totals grow; the split between draws is the point).
+    static const bool per_draw = [] {
+        const char* value = std::getenv("GOW3_GPU_PROFILE_DRAWS");
+        return value && value[0] == '1';
+    }();
+    if (!profiler || (!per_draw && !scheduler.WillBeginRendering(state))) {
         return;
     }
     const auto& vs = pipeline->GetStage(Shader::SwStage::Vertex);

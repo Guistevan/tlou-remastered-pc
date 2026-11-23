@@ -849,8 +849,14 @@ void EmitContext::DefinePushDataBlock() {
 
 EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_coherent, u32 elem_shift,
                                                  BufferType buffer_type, Id data_type) {
+    // gow3 23 Nov 2026 (FlatbufUniform, runtime_info.h): the flat buffer as a uniform block of a
+    // fixed size (uniform blocks have no runtime arrays; the 4-byte stride needs
+    // uniformBufferStandardLayout).
+    const bool uniform = buffer_type == BufferType::Flatbuf && !is_written && FlatbufUniform();
     // Define array type.
-    const Id record_array_type{TypeRuntimeArray(data_type)};
+    const Id record_array_type{
+        uniform ? TypeArray(data_type, ConstU32(FlatbufUniformBytes >> elem_shift))
+                : TypeRuntimeArray(data_type)};
     // Define block struct type. Don't perform decorations twice on the same Id.
     const Id struct_type{TypeStruct(record_array_type)};
     if (std::ranges::find(buf_type_ids, record_array_type.value, &Id::value) ==
@@ -862,13 +868,16 @@ EmitContext::BufferSpv EmitContext::DefineBuffer(bool is_written, bool is_cohere
         buf_type_ids.push_back(record_array_type);
     }
     // Define buffer binding interface.
-    constexpr auto storage_class = spv::StorageClass::StorageBuffer;
+    const auto storage_class =
+        uniform ? spv::StorageClass::Uniform : spv::StorageClass::StorageBuffer;
     const Id struct_pointer_type{TypePointer(storage_class, struct_type)};
     const Id pointer_type = TypePointer(storage_class, data_type);
     const Id id{AddGlobalVariable(struct_pointer_type, storage_class)};
     Decorate(id, spv::Decoration::Binding, binding.unified);
     Decorate(id, spv::Decoration::DescriptorSet, 0U);
-    if (!is_written) {
+    if (uniform) {
+        // read-only by definition
+    } else if (!is_written) {
         Decorate(id, spv::Decoration::NonWritable);
     } else if (is_coherent) {
         // The guest V# MTYPE marks this buffer as shared between invocations;

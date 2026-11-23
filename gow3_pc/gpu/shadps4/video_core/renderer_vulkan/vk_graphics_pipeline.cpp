@@ -597,7 +597,7 @@ void GraphicsPipeline::BuildDescSetLayout(bool preloading) {
                            : buffer.GetSharp(*stage); // See for the comment in compute PL creation
             bindings.push_back({
                 .binding = binding++,
-                .descriptorType = vk::DescriptorType::eStorageBuffer,
+                .descriptorType = BufferDescriptorType(buffer),
                 .descriptorCount = 1,
                 .stageFlags = stage_bit,
             });

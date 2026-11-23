@@ -436,6 +436,16 @@ public:
         return properties.limits.minUniformBufferOffsetAlignment;
     }
 
+    /// gow3: the largest range a uniform buffer descriptor may cover.
+    u32 MaxUniformBufferRange() const {
+        return properties.limits.maxUniformBufferRange;
+    }
+
+    /// gow3: whether uniform blocks may use the std430 layout (4-byte array strides).
+    bool IsUniformBufferStandardLayoutSupported() const {
+        return vk12_features.uniformBufferStandardLayout;
+    }
+
     /// Returns the minimum required alignment for storage buffers
     vk::DeviceSize StorageMinAlignment() const {
         return properties.limits.minStorageBufferOffsetAlignment;

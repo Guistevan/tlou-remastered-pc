@@ -70,10 +70,12 @@ static std::string ShaderBinaryName(u64 pgm_hash, size_t perm_idx) {
     const u32 lanes = Shader::Optimization::LaneCoarsening(pgm_hash);
     // gow3 12 Nov 2026: and The Last of Us' quarter-size depth written at the ambient shadows'
     // pixels (quarter_depth_pass.cpp), "_qd2".
-    return fmt::format("{:#018x}_{}{}{}{}", pgm_hash, perm_idx,
+    // gow3 23 Nov 2026: and the flat buffer as a uniform block (Shader::FlatbufUniform), "_fu".
+    return fmt::format("{:#018x}_{}{}{}{}{}", pgm_hash, perm_idx,
                        Shader::Optimization::MultiwaveLdsBarriers(pgm_hash) ? "_lds4" : "",
                        lanes > 1 ? fmt::format("_lanes{}", lanes) : std::string{},
-                       Shader::Optimization::QuarterDepthPointSample(pgm_hash) ? "_qd2" : "");
+                       Shader::Optimization::QuarterDepthPointSample(pgm_hash) ? "_qd2" : "",
+                       Shader::FlatbufUniform() ? "_fu" : "");
 }
 } // namespace Serialization
 

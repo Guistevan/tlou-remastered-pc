@@ -4,6 +4,7 @@
 #pragma once
 
 #include "shader_recompiler/profile.h"
+#include "shader_recompiler/resource.h"
 #include "shader_recompiler/runtime_info.h"
 #include "video_core/renderer_vulkan/vk_common.h"
 
@@ -24,6 +25,15 @@ static constexpr auto AllGraphicsStageBits =
 class Instance;
 class Scheduler;
 class DescriptorHeap;
+
+/// gow3 23 Nov 2026: the descriptor type of a shader buffer binding; the flat buffer is a uniform
+/// buffer under Shader::FlatbufUniform (runtime_info.h), like its SPIR-V declaration.
+inline vk::DescriptorType BufferDescriptorType(const Shader::BufferResource& buffer) {
+    return buffer.buffer_type == Shader::BufferType::Flatbuf && !buffer.is_written &&
+                   Shader::FlatbufUniform()
+               ? vk::DescriptorType::eUniformBuffer
+               : vk::DescriptorType::eStorageBuffer;
+}
 
 class Pipeline {
 public:

@@ -373,6 +373,8 @@ private:
 
     /// Display pass: counts the frame (Gow3Stats::gpu_frames) and, with GOW3_BUFFER_STATS, the lag.
     void NoteFrameStart();
+    /// GOW3_GPU_PROFILE_FRAME: the last draw used the frame marker's pixel shader.
+    bool profile_frame_marker = false;
     /// gow3: a new frame for the camera tracking and the upscaler; `frame` is the finished one.
     void StartFrame(VideoCore::ImageId frame);
     /// tlou: GOW3_FRAME_CS=<hash>,...: compute shaders writing the finished frame into a display
