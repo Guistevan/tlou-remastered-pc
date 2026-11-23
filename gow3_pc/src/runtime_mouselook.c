@@ -209,6 +209,95 @@ static int camera_shown(const unsigned char *camera) {
     const float blend = *(const float *)(camera + 0x134);
     return isfinite(blend) && blend > 0.5f;
 }
+/* 22 Nov 2026 (GitHub #211: "make it like Part I"): pushing a dumpster or a pallet with the mouse,
+ * the camera stays free and the object turns towards where it looks while walking forward, as
+ * in the 2023 PC version of Part I. The push state's camera code (0x4c7360, a player state's
+ * virtual) calls the camera setter 0x2982a0(camera, direction, flag, speed = 4.0) every frame: it
+ * writes the wanted direction camera + 0x1e0 from the object, locks the yaw (+0x1f8), stamps the
+ * frame (+0x1f4) and the follow speed (+0x1fc); the shown direction at +0x1d0 eases towards it.
+ * Other callers pass 4.5 (0x4ca0d0, another player state, it also centres the pitch) and 5.0
+ * (0x500672); scripts pass their own (0x78029). With the mouse:
+ *  - the hook keeps its own heading, turned by the mouse, and writes it over the wanted and the
+ *    shown direction each frame, so the game's follow does nothing;
+ *  - the direction the game wrote (it differs from the one written here the frame before) is
+ *    the object's camera heading; the angle between the two goes to runtime_pad.c
+ *    (runtime_mouselook_push_steer), which sets the right stick that steers the object while the
+ *    left stick pushes forward. The object turns until the game's own camera would look where
+ *    the mouse looks.
+ * GOW3_PUSH_FREE_CAMERA=0, or the launcher's old steering option (push_steer_classic), keeps the
+ * 20 Nov behaviour (the mouse is the steering stick). */
+static volatile int push_free_allowed;
+static volatile uint64_t push_seen_ms, push_steer_ms;
+static volatile uint32_t push_steer_bits;
+static int push_free_active;
+static float push_view[4], push_written[4], push_object;
+
+/* Off with GOW3_PUSH_FREE_CAMERA=0 or the settings' old steering (push_steer_classic, the
+ * launcher's Mouse tab; live). */
+static int push_free_enabled(void) {
+    static int enabled = -1;
+    if (enabled < 0) {
+        const char *env = getenv("GOW3_PUSH_FREE_CAMERA");
+        enabled = !(env && env[0] == '0');
+    }
+    return enabled && !gow3gpu_controls_push_steer_classic();
+}
+
+/* The lock is this frame's or the last one's and its follow speed is the push state's (4.0) or
+ * the other player state's (4.5). */
+static int push_lock(const unsigned char *camera, uint32_t frame) {
+    if (!push_free_enabled()) return 0;
+    const uint32_t stamp = *(const uint32_t *)(camera + 0x1f4);
+    if (frame - stamp > 2u) return 0;
+    const float speed = *(const float *)(camera + 0x1fc);
+    return fabsf(speed - 4.0f) < 1e-3f || fabsf(speed - 4.5f) < 1e-3f;
+}
+
+static void push_free_camera(unsigned char *camera, float dx) {
+    float *wanted = (float *)(camera + 0x1e0), *shown = (float *)(camera + 0x1d0);
+    if (!(isfinite(wanted[0]) && isfinite(wanted[2]) && isfinite(shown[0]) && isfinite(shown[2]))) return;
+    if (!push_free_active) {
+        /* from the shown camera, so nothing jumps */
+        const float h = atan2f(shown[0], shown[2]);
+        push_view[0] = sinf(h);
+        push_view[1] = 0.0f;
+        push_view[2] = cosf(h);
+        push_view[3] = 0.0f;
+        push_object = heading_of(wanted);
+        push_free_active = 1;
+    } else if (memcmp(wanted, push_written, sizeof(push_written))) {
+        push_object = heading_of(wanted); /* the game set it again since the last frame */
+    }
+    if (dx != 0.0f) turn_xz(push_view, -dx * look_scale(0) * look_invert_x());
+    wanted[0] = shown[0] = push_view[0];
+    wanted[2] = shown[2] = push_view[2];
+    memcpy(push_written, wanted, sizeof(push_written));
+    const float error = wrap_degrees(heading_of(push_view) - push_object);
+    uint32_t bits;
+    memcpy(&bits, &error, 4);
+    __atomic_store_n(&push_steer_bits, bits, __ATOMIC_RELAXED);
+    __atomic_store_n(&push_steer_ms, now_ms(), __ATOMIC_RELAXED);
+    if (look_debug()) {
+        static uint64_t last;
+        const uint64_t now = now_ms();
+        if (now - last >= 500) {
+            printf("Mouse look debug: pushing (free camera), view %.1f, object %.1f, error %.1f, speed %.2f\n",
+                   heading_of(push_view), push_object, error, *(const float *)(camera + 0x1fc));
+            fflush(stdout);
+            last = now;
+        }
+    }
+}
+
+int runtime_mouselook_push_steer(float *error_degrees) {
+    if (now_ms() - __atomic_load_n(&push_steer_ms, __ATOMIC_RELAXED) >= 100) return 0;
+    const uint32_t bits = __atomic_load_n(&push_steer_bits, __ATOMIC_RELAXED);
+    memcpy(error_degrees, &bits, 4);
+    return 1;
+}
+int runtime_mouselook_pushing(void) { return now_ms() - __atomic_load_n(&push_seen_ms, __ATOMIC_RELAXED) < 100; }
+void runtime_mouselook_set_push_free(int allowed) { __atomic_store_n(&push_free_allowed, allowed, __ATOMIC_RELAXED); }
+
 static ABI void *tlou_camera_input(unsigned char *camera, const float *stick, void *unused) {
     (void)stick;
     (void)unused;
@@ -222,20 +311,26 @@ static ABI void *tlou_camera_input(unsigned char *camera, const float *stick, vo
      * +0x1f8), and the right stick steers the object, the camera following it at up to about 25
      * degrees/s. The mouse is the stick then; runtime_pad.c holds it until the camera has turned
      * as far as the mouse moved (runtime_mouselook_push_heading). */
-    if (camera[0x1d0 + 0x28] && camera_shown(camera)) {
+    const uint32_t frame = tlou_frame();
+    const int pushing = camera[0x1d0 + 0x28] && camera_shown(camera) && push_lock(camera, frame);
+    const int free_push = pushing && __atomic_load_n(&push_free_allowed, __ATOMIC_RELAXED);
+    if (camera[0x1d0 + 0x28] && camera_shown(camera) && !free_push) {
         const float heading = heading_of((const float *)(camera + 0x1d0));
         uint32_t bits;
         memcpy(&bits, &heading, 4);
         __atomic_store_n(&push_heading_bits, bits, __ATOMIC_RELAXED);
         __atomic_store_n(&push_ms, now_ms(), __ATOMIC_RELAXED);
     }
-    const uint32_t frame = tlou_frame();
+    if (pushing) __atomic_store_n(&push_seen_ms, now_ms(), __ATOMIC_RELAXED);
     float dx = 0, dy = 0;
     const int took = frame_look(camera, frame, &dx, &dy);
+    if (free_push) push_free_camera(camera, took ? dx : 0.0f);
+    else push_free_active = 0;
     float asked = 0.0f;
     if (took && (dx != 0.0f || dy != 0.0f)) {
         const float per_count = look_scale(0);
-        /* the yaw lock the stick path respects (scripted moments) */
+        /* the yaw lock the stick path respects (scripted moments; a pushed object's free camera
+         * turned above) */
         if (dx != 0.0f && !camera[0x1d0 + 0x28]) {
             const float angle = -dx * per_count * look_invert_x();
             turn_xz(direction, angle);

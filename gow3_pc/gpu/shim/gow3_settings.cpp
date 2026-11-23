@@ -71,6 +71,10 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         }
         return;
     }
+    if (key == "push_steer_classic") {
+        v.push_steer_classic = i != 0;
+        return;
+    }
     if (key == "mouse" || key == "mouse_invert" || key == "mouse_invert_x") {
         (key == "mouse" ? v.mouse : key == "mouse_invert" ? v.mouse_invert : v.mouse_invert_x) = i != 0;
         return;
@@ -298,6 +302,7 @@ void Load() {
         {"GOW3_MOUSE_SENS", "mouse_sens"},            {"GOW3_MOUSE_INVERT", "mouse_invert"},
         {"GOW3_MOUSE_AIM_SENS", "mouse_aim_sens"},    {"GOW3_MOUSE_VERTICAL", "mouse_vertical"},
         {"GOW3_MOUSE_INVERT_X", "mouse_invert_x"},     {"GOW3_MOUSE_SCOPE_SENS", "mouse_scope_sens"},
+        {"GOW3_PUSH_STEER_CLASSIC", "push_steer_classic"},
         {"GOW3_PROMPTS", "prompts"},                  {"GOW3_STICK_SPEED", "stick_speed"},
         {"GOW3_WALK_TOGGLE", "walk_toggle"},          {"GOW3_WALK_SPEED", "walk_speed"},
         {"GOW3_VIBRATION", "vibration"},
@@ -477,6 +482,7 @@ KeyValues Current() {
            v.stick_speed.load());
     Append(text, "mouse_aim_sens=%.2f\nmouse_vertical=%.2f\nmouse_invert_x=%d\nmouse_scope_sens=%.2f\n",
            v.mouse_aim_sens.load(), v.mouse_vertical.load(), int(v.mouse_invert_x.load()), v.mouse_scope_sens.load());
+    Append(text, "push_steer_classic=%d\n", int(v.push_steer_classic.load()));
     Append(text, "walk_toggle=%d\nwalk_speed=%.2f\nvibration=%d\n", int(v.walk_toggle.load()), v.walk_speed.load(),
            int(v.vibration.load()));
     {
@@ -583,6 +589,10 @@ extern "C" float gow3gpu_controls_mouse_scope_sens(void) {
 
 extern "C" float gow3gpu_controls_mouse_vertical(void) {
     return Gow3Settings::Get().mouse_vertical;
+}
+
+extern "C" int gow3gpu_controls_push_steer_classic(void) {
+    return Gow3Settings::Get().push_steer_classic ? 1 : 0;
 }
 
 extern "C" int gow3gpu_controls_mouse_invert_x(void) {

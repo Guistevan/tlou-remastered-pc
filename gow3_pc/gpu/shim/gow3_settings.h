@@ -126,6 +126,9 @@ struct Values {
     /// sensitivity and the zoom's own slowdown (src/runtime_mouselook.c). 10-200%; 100% is a fifth of
     /// that slowdown's turn, the player's choice in the sniper scene.
     std::atomic<float> mouse_scope_sens{1.0f};
+    /// 22 Nov 2026 (GitHub #211): pushing a dumpster or a pallet, the mouse steers the object and
+    /// the camera follows it (the 20 Nov behaviour) instead of the Part I style free camera.
+    std::atomic<bool> push_steer_classic{false};
     /// 11 Nov 2026: the walk key (key map "walk") toggles instead of acting while held, and how
     /// far the left stick goes while walking.
     std::atomic<bool> walk_toggle{false};

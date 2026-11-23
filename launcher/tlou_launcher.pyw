@@ -1126,6 +1126,28 @@ CONTROL_TEXT = {
     'Inverter eixo horizontal': ('Invert horizontal axis', 'Invertir eje horizontal', "Inverser l'axe horizontal",
                                  'Horizontale Achse umkehren', 'Inverti asse orizzontale', 'Odwróć oś poziomą',
                                  'Инвертировать горизонтальную ось', '左右を反転'),
+    'Direção antiga de pallets e lixeiras': (
+        'Old pallet and dumpster steering', 'Dirección antigua de palés y contenedores',
+        'Ancienne direction des palettes et bennes', 'Alte Steuerung für Paletten und Container',
+        'Vecchio controllo di pallet e cassonetti', 'Stare sterowanie paletami i kontenerami',
+        'Старое управление поддонами и мусорными баками', '旧式のパレット・ゴミ箱操作'),
+    'Ligada: ao empurrar, o mouse vira o objeto e a câmera o segue (como antes). Desligada: a câmera fica livre e o objeto vira para onde ela olha, como no Part I.': (
+        'On: while pushing, the mouse turns the object and the camera follows it (as before). Off: the camera '
+        'stays free and the object turns where it looks, as in Part I.',
+        'Activada: al empujar, el ratón gira el objeto y la cámara lo sigue (como antes). Desactivada: la cámara '
+        'queda libre y el objeto gira hacia donde mira, como en Part I.',
+        "Activée : en poussant, la souris tourne l'objet et la caméra le suit (comme avant). Désactivée : la "
+        "caméra reste libre et l'objet tourne vers où elle regarde, comme dans Part I.",
+        'An: Beim Schieben dreht die Maus das Objekt und die Kamera folgt ihm (wie bisher). Aus: Die Kamera '
+        'bleibt frei und das Objekt dreht sich dorthin, wohin sie schaut, wie in Part I.',
+        "Attivo: spingendo, il mouse gira l'oggetto e la telecamera lo segue (come prima). Disattivo: la "
+        "telecamera resta libera e l'oggetto gira dove guarda, come in Part I.",
+        'Włączone: podczas pchania mysz obraca obiekt, a kamera za nim podąża (jak dawniej). Wyłączone: kamera '
+        'pozostaje swobodna, a obiekt obraca się tam, gdzie patrzy, jak w Part I.',
+        'Вкл.: при толкании мышь поворачивает объект, а камера следует за ним (как раньше). Выкл.: камера '
+        'свободна, а объект поворачивается туда, куда она смотрит, как в Part I.',
+        'オン: 押している間、マウスで物を回し、カメラが追従します(従来どおり)。オフ: カメラは自由に動き、'
+        'Part I のように物がカメラの向きへ回ります。'),
     'Espaço': ('Space', 'Espacio', 'Espace', 'Leertaste', 'Spazio', 'Spacja', 'Пробел', 'スペース'),
     'Ctrl esquerdo': ('Left Ctrl', 'Ctrl izquierdo', 'Ctrl gauche', 'Strg links', 'Ctrl sinistro', 'Lewy Ctrl',
                       'Левый Ctrl', '左Ctrl'),
@@ -4017,13 +4039,14 @@ class Launcher(tk.Tk):
         invert_x = tk.BooleanVar(value=ini.get("mouse_invert_x", "0") == "1")
         sens, aim = tk.IntVar(value=percent("mouse_sens")), tk.IntVar(value=percent("mouse_aim_sens"))
         scope = tk.IntVar(value=percent("mouse_scope_sens"))
+        push_classic = tk.BooleanVar(value=ini.get("push_steer_classic", "0") == "1")
         pending = []
 
         def save():
             write_ini({"mouse": int(enabled.get()), "mouse_sens": f"{sens.get() / 100:.2f}",
                        "mouse_aim_sens": f"{aim.get() / 100:.2f}", "mouse_scope_sens": f"{scope.get() / 100:.2f}",
                        "mouse_invert": int(invert.get()),
-                       "mouse_invert_x": int(invert_x.get())})
+                       "mouse_invert_x": int(invert_x.get()), "push_steer_classic": int(push_classic.get())})
 
         def save_later(_=None):   # a slider writes once it rests
             for job in pending:
@@ -4046,6 +4069,12 @@ class Launcher(tk.Tk):
         self.option(body, "Inverter eixo vertical", invert, save)
         self.option(body, "Inverter eixo horizontal", invert_x, save)
         tk.Frame(body, bg=PANEL, height=8).pack()
+        # GitHub #211: off (default) = Part I style free camera while pushing (src/runtime_mouselook.c).
+        self.option(body, "Direção antiga de pallets e lixeiras", push_classic, save)
+        tk.Label(body, text=self.debug_text("Ligada: ao empurrar, o mouse vira o objeto e a câmera o segue (como antes). "
+                                            "Desligada: a câmera fica livre e o objeto vira para onde ela olha, como no Part I."),
+                 bg=PANEL, fg=MUTED, font=("Segoe UI", 9), wraplength=520, justify="left").pack(anchor="w", padx=(22, 0))
+        tk.Frame(body, bg=PANEL, height=8).pack()
         self.option(body, "Assistência de mira", self.aim_assist, self.save_aim_assist)
         tk.Label(body, text=self.debug_text("Desligada: o jogo não ajuda a mira a seguir os inimigos. "
                                             "Vale na próxima vez que o jogo abrir."),
@@ -4055,6 +4084,7 @@ class Launcher(tk.Tk):
             enabled.set(True)
             invert.set(False)
             invert_x.set(False)
+            push_classic.set(False)
             sens.set(100)
             aim.set(100)
             scope.set(100)

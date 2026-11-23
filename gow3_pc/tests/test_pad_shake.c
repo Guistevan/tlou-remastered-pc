@@ -27,6 +27,7 @@ void gow3gpu_controls_get(Gow3Controls *out) {
 float gow3gpu_controls_mouse_aim_sens(void) { return 1.0f; }
 float gow3gpu_controls_mouse_vertical(void) { return 1.0f; }
 int gow3gpu_controls_mouse_invert_x(void) { return 0; }
+int gow3gpu_controls_push_steer_classic(void) { return 0; }
 int gow3gpu_controls_vibration(void) { return 1; }
 int gow3gpu_mouse_take(float *dx, float *dy, unsigned *buttons) { *dx=*dy=0; if (buttons) *buttons=0; return 0; }
 unsigned gow3gpu_mouse_look_calls(void) { return 0; }

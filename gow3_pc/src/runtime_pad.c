@@ -696,12 +696,18 @@ static int walk_state(bool held) {
  * zone so slow movements turn the camera too, and lets go when the mouse rests. */
 /* Returns 1 when the mouse was used (moved or a button held while captured). */
 static int pad_aim_held;
+static uint64_t gamepad_used_at; /* sample_host: the last sample with controller input (us) */
 static int mouse_look_debug(void) {
     static int debug=-1;
     if (debug<0) { const char *e=getenv("GOW3_MOUSE_LOOK_DEBUG"); debug=e && e[0]=='1'; }
     return debug;
 }
 int runtime_pad_aim_held(void) { return __atomic_load_n(&pad_aim_held,__ATOMIC_RELAXED); }
+static float wrap_angle(float a) {
+    while (a>180.0f) a-=360.0f;
+    while (a<-180.0f) a+=360.0f;
+    return a;
+}
 static int sample_mouse(PadData *d) {
     runtime_mouselook_set_stick_boost(1.0f); /* more only below, for a mouse past the full stick */
     if (!mouse_enabled()) return 0;
@@ -727,6 +733,73 @@ static int sample_mouse(PadData *d) {
     const float blend=dt/(dt+25.0f);
     vx+=(dx/dt-vx)*blend;
     vy+=(dy/dt-vy)*blend;
+    /* 22 Nov 2026 (GitHub #211, "like Part I"): pushing a dumpster or a pallet with the mouse
+     * and keys, the camera stays free (runtime_mouselook.c turns it) and, while the left stick
+     * pushes forward, the right stick steers the object towards where the camera looks: a
+     * deflection that grows with the angle between them (full past PUSH_FULL degrees, where the
+     * object turns about 33 degrees/s), then the stick boost up to PUSH_BOOST times for wider
+     * angles; under PUSH_DEAD degrees nothing. Without a captured mouse, or with a controller
+     * used in the last 1.5 s, the 20 Nov behaviour below stays (the game's camera follows the
+     * object and a controller's right stick steers it). */
+    {
+        enum { PUSH_DEAD = 2, PUSH_FULL = 25, PUSH_BOOST = 3, PULL_HYSTERESIS = 15 };
+        const int allowed=captured && now-gamepad_used_at>1500000;
+        runtime_mouselook_set_push_free(allowed);
+        float error;
+        if (allowed && runtime_mouselook_pushing() && runtime_mouselook_push_steer(&error)) {
+            gow3gpu_mouse_look_pause(0);
+            vx=vy=0;
+            /* 22 Nov 2026 (the player: pulling should not turn the dumpster round; looking back
+             * with W Joel should pull towards the camera): W and S move along the camera, as in
+             * Part I. Where that way is within about 90 degrees of the object's front Joel pushes
+             * and the front turns towards it; otherwise he pulls, walking backwards, and the front
+             * turns away from it, so his back points where the camera looks. A band of
+             * PULL_HYSTERESIS degrees keeps the choice from flipping around 90.
+             * The left stick is left alone: the game already reads it against the camera's shown
+             * direction (which the free camera writes), so W looking back is a pull for the game
+             * too. Turning it into stick back made the game push away from the camera instead (the
+             * player's test), and a sign check that measured the turn while pulling only flipped
+             * back and forth. GOW3_PULL_STEER_SIGN=-1 turns the steering the other way while
+             * pulling. */
+            const float stick=(128.0f-(float)d->left_y)/127.5f;
+            const float forward=stick;
+            float aim=error, sx=0.0f, boost=1.0f;
+            static int pulling;
+            static float pull_sign;
+            if (pull_sign==0.0f) {
+                const char *e=getenv("GOW3_PULL_STEER_SIGN");
+                pull_sign=e && e[0]=='-' ? -1.0f : 1.0f;
+            }
+            if (fabsf(stick)>0.3f) {
+                const float move=stick>0.0f ? error : wrap_angle(error+180.0f); /* the way to go vs the front */
+                const float limit=pulling ? 90.0f-PULL_HYSTERESIS : 90.0f+PULL_HYSTERESIS;
+                pulling=fabsf(move)>limit;
+                aim=pulling ? wrap_angle(move+180.0f) : move;
+            }
+            const float angle=fabsf(aim);
+            if (fabsf(stick)>0.3f && angle>PUSH_DEAD) {
+                sx=0.25f+0.75f*fminf(1.0f,(angle-PUSH_DEAD)/(PUSH_FULL-PUSH_DEAD));
+                if (aim>0.0f) sx=-sx; /* a negative stick x raises the heading */
+                if (pulling) sx*=pull_sign;
+                if (angle>PUSH_FULL) {
+                    boost=fminf((float)PUSH_BOOST,1.0f+(angle-PUSH_FULL)/(float)PUSH_FULL);
+                    runtime_mouselook_set_stick_boost(boost);
+                }
+                d->right_x=(uint8_t)lrintf(128.0f+sx*127.0f);
+                d->right_y=128;
+            }
+            if (mouse_look_debug()) {
+                static uint64_t steer_debug_last;
+                if (now-steer_debug_last>=500000) {
+                    printf("Mouse debug: %s (free camera), error %.1f, aim %.1f, forward %.2f, stick %.2f, boost %.1f\n",
+                           pulling ? "pulling" : "pushing",error,aim,forward,sx,boost);
+                    fflush(stdout);
+                    steer_debug_last=now;
+                }
+            }
+            return used;
+        }
+    }
     /* 20 Nov 2026 (GitHub #185): pushing a dumpster or a pallet the right stick steers the object
      * and the camera follows it (runtime_mouselook_push_heading), at most about 33 degrees/s at the
      * full stick: the mouse needed swipe after swipe. There the mouse stays the speed stick, but
@@ -933,6 +1006,7 @@ static void sample_host(PadData *d) {
         key_axis(&d->right_y,held[RS_UP],held[RS_DOWN]);
     }
     limit_left_stick(d,walk_state(walk_held),controls.walk_speed);
+    if (gamepad_used) gamepad_used_at=d->timestamp;
     if (sample_mouse(d)) keyboard_used=1;
     if (d->buttons & BTN_L2) d->l2=255;
     __atomic_store_n(&pad_aim_held,(d->buttons & BTN_L2) || d->l2>30,__ATOMIC_RELAXED);

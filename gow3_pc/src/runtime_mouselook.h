@@ -46,6 +46,14 @@ int runtime_mouselook_aim_recent(void);
 /* The third-person camera is shown with its yaw locked by the game (pushing an object) in the
  * last 100 ms: its shown heading (degrees, atan2(x, z)). */
 int runtime_mouselook_push_heading(float *heading);
+/* GitHub #211: the player pushes a dumpster or a pallet (the push camera's lock, last 100 ms). */
+int runtime_mouselook_pushing(void);
+/* runtime_pad.c, each pad read: the mouse may steer a pushed object with a free camera (it is
+ * captured and no controller's right stick was used lately). */
+void runtime_mouselook_set_push_free(int allowed);
+/* The free camera's heading minus the pushed object's (degrees, positive = the object should
+ * turn to a higher atan2(x, z), as a negative stick x does), in the last 100 ms. */
+int runtime_mouselook_push_steer(float *error_degrees);
 /* runtime_pad.c: the aim button (L2) was held at the last pad read. */
 int runtime_pad_aim_held(void);
 /* runtime_raycast_diag.c (GOW3_RAYCAST_DIAG=1): a site at the mesh ray caster's HandleResults. */

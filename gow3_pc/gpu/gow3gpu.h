@@ -93,6 +93,8 @@ float gow3gpu_controls_mouse_vertical(void);
 /* 19 Nov 2026: with a scope, times the aim sensitivity (GitHub #168). */
 float gow3gpu_controls_mouse_scope_sens(void);
 int gow3gpu_controls_mouse_invert_x(void);
+/* 22 Nov 2026 (GitHub #211): the old steering of pushed dumpsters and pallets (launcher option). */
+int gow3gpu_controls_push_steer_classic(void);
 int gow3gpu_controls_mouse_invert(void);
 float gow3gpu_controls_stick_speed(void);
 /* 11 Nov 2026: the controller's vibration (vibration=0 in the settings: the game's rumble is
