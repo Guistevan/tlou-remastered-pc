@@ -422,7 +422,10 @@ in `launcher/assets/icon.ico` (not in the repository).
   [Uncharted: The Nathan Drake Collection port](https://github.com/bc160201983/Uncharted-The-Nathan-Drake-Collection-PC-port).
 - **NVIDIA DLSS:** DLAA uses NVIDIA DLSS technology through the DLSS bridge adapted from
   [IFreemz/shadPS4-Bloodborne-DLSS-FSR](https://github.com/IFreemz/shadPS4-Bloodborne-DLSS-FSR)
-  (MIT). NVIDIA, RTX and DLSS are trademarks of NVIDIA Corporation.
+  (MIT). The release package carries NVIDIA's unmodified `nvngx_dlss.dll` (DLSS SDK 310.9.16) and the
+  bridge `gow3_dlss.dll`, with NVIDIA's license under `licenses/nvidia-dlss`; a build from source gets
+  them with `tools/fetch_aa_files.sh dlss` (needs MSVC). It runs on NVIDIA RTX cards. NVIDIA, RTX and
+  DLSS are trademarks of NVIDIA Corporation.
 - AMD FSR 4: the v07 INT8 model as built by [Q2RTX](https://github.com/FireBurn/Q2RTX) from AMD's
   MIT-licensed FidelityFX SDK source.
 - **Intel XeSS:** the XeSS option follows VHXXIII's XeSS anti-aliasing for
