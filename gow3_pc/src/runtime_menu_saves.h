@@ -22,8 +22,17 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused);
  * list. */
 int runtime_menu_saves_open(int type, int count, int new_first, const char *const *labels,
                             const char *const *pictures, const char *const *chapters);
-/* The row chosen on the page (once; -1 none): the replayed button's dialog answers with it. */
+/* The row chosen on the page (once; -1 none): the replayed button's dialog answers with it.
+ * GOW3_MENU_SAVES_NO_SAVE: the footer's "CONTINUE WITHOUT SAVING" was pressed, the dialog is
+ * answered "cancelled" (the game then asks whether to start without saving). */
 int runtime_menu_saves_take_choice(void);
+#define GOW3_MENU_SAVES_NO_SAVE (-2)
+/* 1 while the page offers to go on without saving (the save list of a new game or a chapter,
+ * from the difficulty choice): the footer's Square prompt, from the text hook. */
+int runtime_menu_saves_no_save_offered(void);
+/* Nonzero while that footer shows: the footer's Triangle prompt (COMMENTARY ON/OFF, drawn with
+ * the Square one) is skipped (src/menu_pc_hook.h's stub reads it). */
+const int *runtime_menu_saves_commentary_flag(void);
 /* From the dispatcher hook: the button pressed last (the one a dialog comes from, pressed again
  * once a row is chosen). */
 void runtime_menu_saves_note_button(uint32_t hash);

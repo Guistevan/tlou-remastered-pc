@@ -1125,11 +1125,15 @@ static ABI int32_t pad_close(int32_t handle) {
     if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
     opened=0; return 0;
 }
+/* The buttons the game read last (PlayStation bits: keys and other controllers as mapped). */
+static uint32_t game_buttons;
+uint32_t runtime_pad_buttons(void) { return __atomic_load_n(&game_buttons,__ATOMIC_RELAXED); }
 static ABI int32_t pad_read_state(int32_t handle, PadData *data) {
     if (handle!=PAD_HANDLE || !opened) return ERR_INVALID_HANDLE;
     if (!data) return ERR_INVALID_ARG;
     pthread_mutex_lock(&lock);
     sample(data); ++reads;
+    __atomic_store_n(&game_buttons,data->buttons,__ATOMIC_RELAXED);
     pthread_mutex_unlock(&lock);
     return 0;
 }
@@ -1150,6 +1154,7 @@ static ABI int32_t pad_read(int32_t handle, PadData *data, int32_t count) {
     pthread_mutex_lock(&lock);
     PadData sampled;
     sample(&sampled); ++reads;
+    __atomic_store_n(&game_buttons,sampled.buttons,__ATOMIC_RELAXED);
     int result=buffered_report(data,&sampled);
     pthread_mutex_unlock(&lock);
     return result;

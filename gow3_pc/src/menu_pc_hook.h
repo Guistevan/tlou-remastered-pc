@@ -331,6 +331,35 @@ static const Gow3Signature gow3_menu_update_site = {
     "49 89 d7 48 8d 15 ?? ?? ?? ?? bf eb ce ff 74", 0};
 enum { GOW3_MENU_UPDATE_LENGTH = 6 };
 
+/* The footer (update 1.11: 0x2fa5a0) draws, for the page flag 0x10000000, the cinematics' two
+ * prompts: Square SUBTITLES ON/OFF, then Triangle COMMENTARY ON/OFF unless a check jumps past it
+ * (the je at +0x16 of this signature). The save list uses only the first (its "CONTINUE WITHOUT
+ * SAVING"): the je goes to a stub that also jumps past the second while *flag is set. */
+static const Gow3Signature gow3_menu_footer_commentary = {
+    "48 8d 0d ?? ?? ?? ?? 8b 85 e8 fd ff ff 44 8a ad ff fc ff ff 3b 01 0f 84 ?? ?? ?? ?? "
+    "48 8d 05 ?? ?? ?? ?? 48 8b 00 80 b8 e4 33 00 00 00", 0};
+enum { GOW3_MENU_COMMENTARY_SKIP = 0x16, GOW3_MENU_COMMENTARY_LENGTH = 6 };
+/* The stub for the je at site (its 6 bytes as they were): its own jump when taken, else past the
+ * prompt while *flag != 0, else on after the je. 47 bytes. */
+static inline unsigned gow3_menu_build_commentary_stub(unsigned char *out, uintptr_t flag, const unsigned char *site) {
+    int32_t relative;
+    memcpy(&relative, site + 2, 4);
+    const uint64_t next = (uint64_t)(uintptr_t)site + GOW3_MENU_COMMENTARY_LENGTH, skip = next + (uint64_t)(int64_t)relative;
+    unsigned k = 0;
+    out[k++] = 0x74; out[k++] = 31;                                        /* je skip */
+    out[k++] = 0x50;                                                       /* push rax */
+    out[k++] = 0x48; out[k++] = 0xb8; memcpy(out + k, &flag, 8); k += 8;  /* mov rax, flag */
+    out[k++] = 0x83; out[k++] = 0x38; out[k++] = 0x00;                     /* cmp dword [rax], 0 */
+    out[k++] = 0x58;                                                       /* pop rax */
+    out[k++] = 0x75; out[k++] = 14;                                        /* jne skip */
+    static const unsigned char jump[] = {0xff, 0x25, 0x00, 0x00, 0x00, 0x00};
+    memcpy(out + k, jump, sizeof(jump)); k += sizeof(jump);               /* jmp [next] */
+    memcpy(out + k, &next, 8); k += 8;
+    memcpy(out + k, jump, sizeof(jump)); k += sizeof(jump);               /* skip: jmp [skip] */
+    memcpy(out + k, &skip, 8); k += 8;
+    return k;
+}
+
 /* The calls (e8 rel32) to `target` in code[0, size), at most `max`; returns how many there are. */
 static inline unsigned gow3_menu_find_calls(const unsigned char *code, uint64_t size, uint64_t target,
                                             uint64_t *found, unsigned max) {

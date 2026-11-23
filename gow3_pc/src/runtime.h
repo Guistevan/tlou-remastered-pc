@@ -103,6 +103,8 @@ uintptr_t runtime_audio_resolve(const char *name);
 void runtime_audio_report(void);
 uintptr_t runtime_pad_resolve(const char *name);
 void runtime_pad_report(void);
+/* The buttons the game read last (PlayStation bits, keys and other controllers as mapped). */
+uint32_t runtime_pad_buttons(void);
 uintptr_t runtime_rtc_resolve(const char *name);
 const char *runtime_file_user_dir(void);
 int32_t runtime_file_available_space_kb(const char *guest,uint64_t *kb);

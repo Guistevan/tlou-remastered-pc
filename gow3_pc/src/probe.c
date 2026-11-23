@@ -1031,8 +1031,9 @@ static void install_menu_exit(Segment *segments, uint64_t count, uint64_t size) 
     /* The arena: the exit button's lists and the PC settings page (src/menu_pc_hook.h: the page
      * table is copied, ~14 KiB per menu data load), 32 slots of 32 KiB reused per load address
      * (src/runtime_menu_exit.c). */
-    enum { CLICK_STUB = 512, TEXT_STUB = 1024, OPTION_STUB = 1536, UPDATE_STUB = 2048, ARENA_PAGES = 256 };
-    uint64_t update_at = UINT64_MAX;
+    enum { CLICK_STUB = 512, TEXT_STUB = 1024, OPTION_STUB = 1536, UPDATE_STUB = 2048, COMMENTARY_STUB = 3072,
+           ARENA_PAGES = 256 };
+    uint64_t update_at = UINT64_MAX, commentary_at = UINT64_MAX;
     unsigned char *stubs = allocate_near_image(size);
     unsigned char *arena = allocate(page_size * ARENA_PAGES);
     if (!stubs || !arena) {
@@ -1073,6 +1074,15 @@ static void install_menu_exit(Segment *segments, uint64_t count, uint64_t size) 
                                        (uintptr_t)(image + update_at + GOW3_MENU_UPDATE_LENGTH), image + update_at);
         else
             update_at = UINT64_MAX;
+        /* The save list's footer: the Square prompt without the Triangle one (menu_pc_hook.h). */
+        commentary_at = gow3_signature_find(image, size, &gow3_menu_footer_commentary);
+        if (commentary_at != UINT64_MAX && mapped(segments, count, commentary_at, 64)) {
+            commentary_at += GOW3_MENU_COMMENTARY_SKIP;
+            gow3_menu_build_commentary_stub(stubs + COMMENTARY_STUB, (uintptr_t)runtime_menu_saves_commentary_flag(),
+                                            image + commentary_at);
+        } else {
+            commentary_at = UINT64_MAX;
+        }
     }
     protect(stubs, page_size, 5);
     runtime_menu_exit_set_arena(arena, page_size * ARENA_PAGES);
@@ -1112,6 +1122,9 @@ static void install_menu_exit(Segment *segments, uint64_t count, uint64_t size) 
                        install_jump(update_at, GOW3_MENU_UPDATE_LENGTH, stubs + UPDATE_STUB);
     if (update) runtime_menu_saves_set_update_hooked();
     printf("Menu: save list page %s\n", update ? "ready (opened from the menu update)" : "unavailable (menu update not found)");
+    const int commentary = update && commentary_at != UINT64_MAX &&
+                           install_jump(commentary_at, GOW3_MENU_COMMENTARY_LENGTH, stubs + COMMENTARY_STUB);
+    if (update && !commentary) puts("Menu: save list footer keeps the Triangle prompt (footer check not found)");
 }
 /* G3PATCH2 (patches.py): the patches' image base, then byte writes at image offsets, applied
  * after relocation. A write may replace a whole base-relative pointer slot (60/90 FPS++ swap

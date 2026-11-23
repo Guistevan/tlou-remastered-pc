@@ -54,12 +54,31 @@ static atomic_int pressed = -1, chosen = -1;
 static int seen_page, settle;
 static void *_Atomic open_menu;
 
-/* The page on top of the menu's page stack (its hash), read on the menu's update. */
-static uint32_t top_page(const unsigned char *menu) {
-    if (!menu) return 0;
+/* A new game's or a chapter's save list (its dialog comes from the difficulty choice) can go on
+ * without saving, as Back did in the overlay list: the game then asks "Auto-save will be
+ * disabled until you manually save. Start ... without saving?". The page shows it in its footer
+ * as the game's Square prompt (the page flag the cinematics' SUBTITLES prompt uses, its text from
+ * the text hook), and Square on the page (the pad as the game read it) chooses it. */
+#define BUTTON_NEW_GAME_DIFFICULTY 0xd8e3038bu
+#define PAD_SQUARE 0x8000u
+enum { PAGE_OBJECT_FLAGS = 0xa8 };
+#define PAGE_FLAG_SQUARE_PROMPT 0x10000000u
+static atomic_int no_save;
+static uint32_t previous_buttons;
+/* The footer's Triangle prompt off (read by the footer's stub): set while our page is on top. */
+static int hide_commentary;
+const int *runtime_menu_saves_commentary_flag(void) { return &hide_commentary; }
+
+/* The page object on top of the menu's page stack, read on the menu's update. */
+static unsigned char *top_page_object(const unsigned char *menu) {
+    if (!menu) return NULL;
     const int32_t top = (int32_t)gow3_menu_u32(menu + GOW3_MENU_PAGE_TOP);
-    if (top < 0 || top >= GOW3_MENU_PAGE_STACK_SIZE) return 0;
-    const unsigned char *page = (const unsigned char *)(uintptr_t)gow3_menu_u64(menu + GOW3_MENU_PAGE_STACK + 8 * top);
+    if (top < 0 || top >= GOW3_MENU_PAGE_STACK_SIZE) return NULL;
+    return (unsigned char *)(uintptr_t)gow3_menu_u64(menu + GOW3_MENU_PAGE_STACK + 8 * top);
+}
+/* Its hash. */
+static uint32_t top_page(const unsigned char *menu) {
+    const unsigned char *page = top_page_object(menu);
     return page ? gow3_menu_u32(page + GOW3_MENU_PAGE_OBJECT_HASH) : 0;
 }
 
@@ -109,6 +128,7 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
     const int st = atomic_load(&state);
     if (st == ASKED) {
         seen_page = 0;
+        previous_buttons = runtime_pad_buttons();
         atomic_store(&paused, in_game(menu));
         atomic_store(&open_menu, menu);
         atomic_store(&state, OPEN);
@@ -119,6 +139,7 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
     }
     if (menu != atomic_load(&open_menu)) return;
     const int on_top = top_page(menu) == GOW3_MENU_SAVES_PAGE;
+    __atomic_store_n(&hide_commentary, st == OPEN && on_top && atomic_load(&no_save), __ATOMIC_RELAXED);
     if (st == OPEN) {
         if (on_top) seen_page = 1;
         else if (seen_page) { /* Back: left without a choice */
@@ -128,7 +149,28 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
         }
         /* The menu's state (menu+8): 0xc while it is on screen; Start closes it (5, then 0 while
          * the game runs, our page staying on top of its stack) and opens it again (3, then 0xc). */
-        show_preview(on_top && gow3_menu_u32((const unsigned char *)menu + GOW3_MENU_STATE) == GOW3_MENU_STATE_SHOWN);
+        const int shown = on_top && gow3_menu_u32((const unsigned char *)menu + GOW3_MENU_STATE) == GOW3_MENU_STATE_SHOWN;
+        if (on_top) {
+            /* The footer's Square prompt only on a save list that can go on without saving (the
+             * page is the same for the others). */
+            unsigned char *page = top_page_object(menu);
+            const uint32_t flags = gow3_menu_u32(page + PAGE_OBJECT_FLAGS);
+            const uint32_t want = atomic_load(&no_save) ? flags | PAGE_FLAG_SQUARE_PROMPT : flags & ~PAGE_FLAG_SQUARE_PROMPT;
+            if (want != flags) memcpy(page + PAGE_OBJECT_FLAGS, &want, 4);
+        }
+        const uint32_t buttons = runtime_pad_buttons();
+        const int square = (buttons & PAD_SQUARE) && !(previous_buttons & PAD_SQUARE);
+        previous_buttons = buttons;
+        if (shown && square && atomic_load(&no_save)) {
+            atomic_store(&pressed, GOW3_MENU_SAVES_NO_SAVE);
+            settle = 0;
+            atomic_store(&state, SETTLING);
+            gow3gpu_preview_show(-1);
+            if (page_back) page_back(menu, 0);
+            puts("Menu: save list, continue without saving");
+            return;
+        }
+        show_preview(shown);
     } else if (st == SETTLING) {
         gow3gpu_preview_show(-1);
         if (on_top) settle = 0;
@@ -219,6 +261,7 @@ int runtime_menu_saves_open(int type, int count, int has_new, const char *const 
     }
     gow3gpu_preview_begin(shown, count);
     atomic_store(&origin_button, atomic_load(&last_button));
+    atomic_store(&no_save, type == 1 && atomic_load(&origin_button) == BUTTON_NEW_GAME_DIFFICULTY);
     atomic_store(&state, ASKED);
     return 1;
 }
@@ -229,6 +272,10 @@ void runtime_menu_saves_note_button(uint32_t hash) {
 
 int runtime_menu_saves_take_choice(void) {
     return atomic_exchange(&chosen, -1);
+}
+
+int runtime_menu_saves_no_save_offered(void) {
+    return atomic_load(&no_save) && atomic_load(&state) == OPEN;
 }
 
 /* Runs inside the dispatcher, in the menu's update: the shown row is chosen and the page closes. */

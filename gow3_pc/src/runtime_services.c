@@ -616,6 +616,13 @@ static ABI int32_t save_open(const unsigned char *p) {
     /* The replayed button (Load Game, Save Game, ...): the save chosen on the game's menu page, at
      * once (the same dialog type as the page showed). */
     const int pick=runtime_menu_saves_take_choice();
+    if (pick==GOW3_MENU_SAVES_NO_SAVE && (int)type==save_page.type) {
+        /* "Continue without saving": answered as Back was in the overlay list. */
+        save_dialog.result=SAVE_RESULT_CANCELED;
+        dialogs[2].status=DIALOG_FINISHED; dialogs[2].button=0;
+        puts("Runtime: SaveDataDialog list: continue without saving (on the game's menu page)");
+        return 0;
+    }
     if (pick>=0 && (int)type==save_page.type) {
         const int at=pick-save_page.has_new;
         if (at<0 && save_dialog.has_new) {

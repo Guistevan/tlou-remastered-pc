@@ -254,13 +254,27 @@ int main(void) {
     static const unsigned char text_original[GOW3_MENU_TEXT_LENGTH] = {0x55, 0x48, 0x89, 0xe5, 0x41, 0x57};
     unsigned original_at = 0;
     n = gow3_menu_build_text_stub(stub, 0x1111, 0x2222, text_original, &original_at);
-    assert(n <= 64 && original_at == 26 && stub[12] == 0x73 && 14 + stub[13] == original_at);
+    assert(n <= 64 && original_at == 42 && stub[12] == 0x72 && 14 + stub[13] == 30);
+    assert(stub[14] == 0x81 && stub[15] == 0xfe && gow3_menu_u32(stub + 16) == GOW3_MENU_TEXT_SUBTITLES_ON);
+    assert(stub[20] == 0x74 && 22 + stub[21] == 30);
+    assert(stub[22] == 0x81 && stub[23] == 0xfe && gow3_menu_u32(stub + 24) == GOW3_MENU_TEXT_SUBTITLES_OFF);
+    assert(stub[28] == 0x75 && 30 + stub[29] == original_at && stub[30] == 0x48 && stub[31] == 0xb8);
     assert(stub[0] == 0x89 && stub[1] == 0xf0 && stub[2] == 0x2d && stub[7] == 0x3d);
     assert(gow3_menu_u32(stub + 3) == GOW3_MENU_TEXT_FIRST);
     assert(gow3_menu_u32(stub + 8) == GOW3_MENU_TEXT_LAST - GOW3_MENU_TEXT_FIRST + 1);
     assert(!memcmp(stub + original_at, text_original, GOW3_MENU_TEXT_LENGTH));
 
     test_pc_page();
+
+    /* The footer's commentary check: taken as before, else past the prompt while the flag is set. */
+    {
+        static const unsigned char site[GOW3_MENU_COMMENTARY_LENGTH] = {0x0f, 0x84, 0x01, 0x01, 0x00, 0x00};
+        n = gow3_menu_build_commentary_stub(stub, 0x123456789aULL, site);
+        const uint64_t next = gow3_menu_u64(stub + 25), skip = gow3_menu_u64(stub + 39);
+        assert(n == 47 && stub[0] == 0x74 && 2 + stub[1] == 33 && stub[17] == 0x75 && 19 + stub[18] == 33);
+        assert(gow3_menu_u64(stub + 5) == 0x123456789aULL && stub[13] == 0x83 && stub[14] == 0x38);
+        assert(next == (uintptr_t)site + 6 && skip == (uintptr_t)site + 6 + 0x101);
+    }
 
     /* The binding factory's stub: our option range to the helper, the rest to the factory. */
     n = gow3_menu_build_option_stub(stub, 0x1111, 0x2222);
