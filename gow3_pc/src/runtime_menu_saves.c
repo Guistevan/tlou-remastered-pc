@@ -45,7 +45,14 @@ static _Alignas(16) int32_t selected;
  *   a row's press closes the page with the game's back() (SETTLING); once the main page has been
  *   on top for SETTLE_FRAMES updates, LOAD GAME is dispatched again (as the game's own save
  *   callback 0x309900 does) and the dialog it opens is answered with the chosen save at once. */
-enum { CLOSED, ASKED, OPEN, SETTLING };
+enum { CLOSED, ASKED, OPEN, SETTLING, ASKING, CONFIRMED };
+/* Saving over a save: the game's Yes/No page on top of ours (ASKING; No closes it, back to OPEN);
+ * its Yes (CONFIRMED): the update closes that page with back(), then the row is chosen as above. */
+typedef ABI void (*ConfirmOpen)(void *menu, uint32_t title, uint32_t yes_label, uint32_t yes_button,
+                                uint32_t no_label, uint32_t no_button, uint32_t extra);
+static ConfirmOpen confirm_open;
+static int asked_row, confirm_closing, asked_seen, asked_frames;
+enum { ASK_FRAMES = 30 };
 enum { SETTLE_FRAMES = 15 };
 /* The button the dialog came from (Load Game, Save Game, ...): pressed again after a choice. */
 static atomic_uint last_button, origin_button;
@@ -80,6 +87,15 @@ static unsigned char *top_page_object(const unsigned char *menu) {
 static uint32_t top_page(const unsigned char *menu) {
     const unsigned char *page = top_page_object(menu);
     return page ? gow3_menu_u32(page + GOW3_MENU_PAGE_OBJECT_HASH) : 0;
+}
+
+/* The row is chosen: the page closes with back(), the update presses the button again. */
+static void choose(void *menu, int row) {
+    atomic_store(&pressed, row);
+    settle = 0;
+    atomic_store(&state, SETTLING);
+    gow3gpu_preview_show(-1);
+    if (page_back && menu) page_back(menu, 0);
 }
 
 void runtime_menu_saves_set_navigation(void *open, void *back, void *dispatcher) {
@@ -140,6 +156,26 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
     if (menu != atomic_load(&open_menu)) return;
     const int on_top = top_page(menu) == GOW3_MENU_SAVES_PAGE;
     __atomic_store_n(&hide_commentary, st == OPEN && on_top && atomic_load(&no_save), __ATOMIC_RELAXED);
+    if (st == ASKING) {
+        /* The question opens on the menu's next updates; ours on top again once it was seen
+         * (or if it never came): No closed it. */
+        if (top_page(menu) == GOW3_MENU_CONFIRM_PAGE) asked_seen = 1;
+        else if (on_top && (asked_seen || ++asked_frames > ASK_FRAMES)) {
+            puts("Menu: save list, not overwritten");
+            atomic_store(&state, OPEN);
+        }
+        return;
+    }
+    if (st == CONFIRMED) {
+        if (on_top) {
+            printf("Menu: save list row %d, overwrite confirmed\n", asked_row);
+            choose(menu, asked_row);
+        } else if (top_page(menu) == GOW3_MENU_CONFIRM_PAGE && !confirm_closing && page_back) {
+            confirm_closing = 1;
+            page_back(menu, 0);
+        }
+        return;
+    }
     if (st == OPEN) {
         if (on_top) seen_page = 1;
         else if (seen_page) { /* Back: left without a choice */
@@ -268,7 +304,12 @@ int runtime_menu_saves_open(int type, int count, int has_new, const char *const 
 }
 
 void runtime_menu_saves_note_button(uint32_t hash) {
-    if (hash != GOW3_MENU_SAVES_LIST) atomic_store(&last_button, hash);
+    if (hash != GOW3_MENU_SAVES_LIST && hash != GOW3_MENU_SAVES_OVERWRITE_YES && hash != GOW3_MENU_CONFIRM_NO)
+        atomic_store(&last_button, hash);
+}
+
+void runtime_menu_saves_set_confirm(void *open) {
+    confirm_open = (ConfirmOpen)open;
 }
 
 int runtime_menu_saves_take_choice(void) {
@@ -281,15 +322,31 @@ int runtime_menu_saves_no_save_offered(void) {
 
 /* Runs inside the dispatcher, in the menu's update: the shown row is chosen and the page closes. */
 int runtime_menu_saves_button(void *menu, uint32_t hash) {
+    if (hash == GOW3_MENU_SAVES_OVERWRITE_YES) {
+        /* Yes on the overwrite question: the update closes that page, then chooses the row. */
+        if (atomic_load(&state) == ASKING) {
+            confirm_closing = 0;
+            atomic_store(&state, CONFIRMED);
+        }
+        return 1;
+    }
     if (hash != GOW3_MENU_SAVES_LIST) return 0;
     if (atomic_load(&state) != OPEN) return 1;
     const int count = atomic_load(&row_count);
     const int row = selected < 0 ? 0 : selected >= count ? count - 1 : selected;
-    atomic_store(&pressed, row);
-    settle = 0;
-    atomic_store(&state, SETTLING);
-    gow3gpu_preview_show(-1);
-    if (page_back && menu) page_back(menu, 0);
+    /* Saving over a save (not the new save row): the game's Yes/No page asks first. */
+    if (atomic_load(&list_type) == 1 && row >= atomic_load(&new_first) && confirm_open && menu) {
+        asked_row = row;
+        asked_seen = 0;
+        asked_frames = 0;
+        atomic_store(&state, ASKING);
+        gow3gpu_preview_show(-1);
+        confirm_open(menu, GOW3_MENU_SAVES_OVERWRITE_TEXT, GOW3_MENU_TEXT_YES, GOW3_MENU_SAVES_OVERWRITE_YES,
+                     GOW3_MENU_TEXT_NO, GOW3_MENU_CONFIRM_NO, 0);
+        printf("Menu: save list row %d, overwrite? (the game's Yes/No page)\n", row);
+        return 1;
+    }
+    choose(menu, row);
     return 1;
 }
 

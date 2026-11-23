@@ -46,6 +46,12 @@
 #define GOW3_MENU_SAVES_PAGE 0x3c9e51b4u
 #define GOW3_MENU_SAVES_TITLE 0x3c9e51b5u
 #define GOW3_MENU_SAVES_LIST 0x3c9e51b6u
+/* Saving over a save asks first on the game's Yes/No page (menu_exit_hook.h's opener): its Yes
+ * button, and its question (a text the text hook answers). */
+#define GOW3_MENU_SAVES_OVERWRITE_YES 0x3c9e51b7u
+#define GOW3_MENU_SAVES_OVERWRITE_TEXT 0x3c9e51b8u
+/* That Yes/No page (its hash on the page stack). */
+#define GOW3_MENU_CONFIRM_PAGE 0x960d2b9du
 /* Option sids (+0x34 of a toggle or slider), not texts; the save list's is the last one. */
 #define GOW3_MENU_PC_OPTION 0x3c9e5200u
 #define GOW3_MENU_SAVES_OPTION (GOW3_MENU_PC_OPTION + GOW3_MENU_PC_MAX_OPTIONS - 1)

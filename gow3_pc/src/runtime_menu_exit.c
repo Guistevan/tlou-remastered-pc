@@ -142,6 +142,7 @@ static ConfirmOpen confirm_open;
 
 void runtime_menu_exit_set_confirm(void *open) {
     confirm_open = (ConfirmOpen)open;
+    runtime_menu_saves_set_confirm(open);
 }
 
 /* Runs on the menu's thread, at the dispatcher's entry: the game's own opener is safe to call. */

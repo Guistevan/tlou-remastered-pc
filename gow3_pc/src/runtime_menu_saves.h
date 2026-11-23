@@ -36,6 +36,8 @@ const int *runtime_menu_saves_commentary_flag(void);
 /* From the dispatcher hook: the button pressed last (the one a dialog comes from, pressed again
  * once a row is chosen). */
 void runtime_menu_saves_note_button(uint32_t hash);
+/* The game's Yes/No page opener (menu_exit_hook.h): saving over a save asks there first. */
+void runtime_menu_saves_set_confirm(void *open);
 /* A press (inside the dispatcher): 1 when it was the list's (the shown row is chosen). */
 int runtime_menu_saves_button(void *menu, uint32_t hash);
 /* The list's binding (runtime_menu_pc_binding, for GOW3_MENU_SAVES_OPTION). */
