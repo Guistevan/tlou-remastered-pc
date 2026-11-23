@@ -144,7 +144,7 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
         if (on_top) seen_page = 1;
         else if (seen_page) { /* Back: left without a choice */
             atomic_store(&state, CLOSED);
-            gow3gpu_preview_show(-1);
+            gow3gpu_preview_begin(NULL, 0); /* the rows' pictures go */
             return;
         }
         /* The menu's state (menu+8): 0xc while it is on screen; Start closes it (5, then 0 while
@@ -177,6 +177,7 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
         else if (++settle >= SETTLE_FRAMES) {
             atomic_store(&chosen, atomic_load(&pressed));
             atomic_store(&state, CLOSED);
+            gow3gpu_preview_begin(NULL, 0); /* the rows' pictures go */
             printf("Menu: save list row %d chosen, button %#x again\n", atomic_load(&chosen), atomic_load(&origin_button));
             if (dispatch) dispatch(menu, atomic_load(&origin_button), 0);
         }

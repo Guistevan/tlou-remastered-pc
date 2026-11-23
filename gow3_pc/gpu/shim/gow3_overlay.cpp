@@ -172,7 +172,7 @@ std::vector<ImTextureData*> choice_textures, choice_retired;
 // shows its picture. Guarded by imgui_mutex but preview_index (any thread).
 std::vector<Gow3Png::Image> preview_pictures;
 std::vector<ImTextureData*> preview_textures;
-bool preview_pending = false;
+std::atomic<bool> preview_pending{false}; // also read by Visible: the next frame makes them
 std::atomic<int> preview_index{-1};
 /// When ShowPreview last asked (steady_clock ticks): the menu's update asks every frame while the
 /// list is shown; the picture goes once it stops (Start closes the pause menu at once, and the
@@ -1806,6 +1806,10 @@ void UpdatePreviewTextures() {
         preview_textures.push_back(NewTexture(picture));
     }
     preview_pictures.clear();
+    // The overlay keeps drawing until the backend has destroyed the old ones (UpdateChoiceTextures
+    // frees them then), not only until the next time it is shown. An empty list (the page closed,
+    // runtime_menu_saves.c) only lets the old ones go.
+    choice_retiring = !choice_retired.empty();
 }
 
 // The shown row's picture, under the texts of the panel beside the list (1080p: 773,320 to
@@ -2036,7 +2040,7 @@ bool Visible() {
     const auto& s = Gow3Settings::Get();
     // open_requested: the next Render opens the menu, also when nothing else is drawn.
     return initialized && (loading || background_total || menu_open || open_requested || PreviewShown() ||
-                           text_entry_active || choice_active ||
+                           preview_pending || text_entry_active || choice_active ||
                            choice_retiring || s.show_fps || trophy_showing);
 }
 
