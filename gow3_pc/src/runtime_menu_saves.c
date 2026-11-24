@@ -29,6 +29,29 @@ static char chapters[MAX_ROWS][LABEL_SIZE];
 /* The rest of its detail: completion and play time, collectibles (lines). */
 static char details[MAX_ROWS][LABEL_SIZE * 2];
 static uint32_t subchapter_text[MAX_ROWS];
+/* Its sub-chapter's place in the story (-1: none, as COMPLETE): its picture. The 29 sub-chapters'
+ * text ids in story order (the Chapters list's areas, each area's sub-chapters as the game lists
+ * them), and the game's image id of the first one's picture. */
+static int subchapter_index[MAX_ROWS];
+static const uint32_t subchapter_order[] = {
+    0xe2db0a5du,                                         /* Hometown: Prologue */
+    0xef982c84u, 0xeb593133u, 0xf51e6136u, 0xf1df7c81u, /* The Quarantine Zone */
+    0xfc9c5a58u, 0xf85d47efu, 0xc012fa52u, 0xc4d3e7e5u, /* The Outskirts */
+    0xc3132d87u, 0xc7d23030u, 0xca9116e9u, 0xce500b5eu, /* Bill's Town */
+    0xd0175b5bu, 0xd4d646ecu, 0xd9956035u, 0xdd547d82u, /* Pittsburgh */
+    0xe51bc03fu, 0xe1dadd88u,                            /* The Suburbs */
+    0xb1f87254u, 0xb5396fe3u,                            /* Tommy's Dam */
+    0xb87a493au, 0xbcbb548du,                            /* The University */
+    0xa2fc0488u, 0xa63d193fu,                            /* Lakeside Resort */
+    0xab7e3fe6u, 0xafbf2251u,                            /* Bus Depot */
+    0x97f09fecu,                                         /* The Firefly Lab: The Hospital */
+    0x9331825bu,                                         /* Jackson: Epilogue */
+};
+enum { SUBCHAPTER_COUNT = sizeof(subchapter_order) / sizeof(subchapter_order[0]) };
+/* Left Behind's areas come after the game's 12 (the Chapters list in Left Behind shows its own
+ * table, rows 0-5, and its own art, shot-chapters-spdlc1.tga, those rows in the same cells). */
+enum { LB_AREA_FIRST = 12, LB_AREAS = 6 };
+#define SUBCHAPTER_IMAGE_FIRST 0x38u
 static int areas[MAX_ROWS];
 /* The game had no picture for the row's area (its Chapters art is not loaded, as in the pause
  * menu): the overlay draws the save's own picture where the game's would be. */
@@ -222,14 +245,15 @@ ABI void runtime_menu_saves_update(void *menu, uint32_t unused) {
 
 static int area_of(int row);
 
-/* The Chapters page's area pictures as PNG files in <user>/chapter-art-2 (gow3_chapter_art.cpp),
- * made from the game's common.psarc the first time; 1 when they are there. */
+/* The Chapters page's area and sub-chapter pictures, and Left Behind's, as PNG files in
+ * <user>/chapter-art-4 (gow3_chapter_art.cpp), made from the game's common.psarc the first time; 1
+ * when they are there. */
 static int chapter_art(void) {
     static int ready = -1;
     if (ready >= 0) return ready;
     char dir[600], last[680];
-    snprintf(dir, sizeof(dir), "%s/chapter-art-2", runtime_file_user_dir()); /* -2: with the mask */
-    snprintf(last, sizeof(last), "%s/area-11.png", dir);
+    snprintf(dir, sizeof(dir), "%s/chapter-art-4", runtime_file_user_dir()); /* -4: Left Behind's too */
+    snprintf(last, sizeof(last), "%s/lb-5.png", dir);
     if (access(last, 0) == 0) return ready = 1;
     mkdir(dir, 0755);
     char psarc[1024];
@@ -237,7 +261,7 @@ static int chapter_art(void) {
         puts("Menu: no common.psarc for the Chapters pictures");
         return ready = 0;
     }
-    ready = gow3gpu_chapter_art(psarc, dir) == 12;
+    ready = gow3gpu_chapter_art(psarc, dir) == 12 + SUBCHAPTER_COUNT + LB_AREAS;
     return ready;
 }
 
@@ -283,16 +307,22 @@ int runtime_menu_saves_open(int type, int count, int has_new, const char *const 
     selected = 0;
     atomic_store(&pressed, -1);
     atomic_store(&chosen, -1);
-    /* Saves whose area is known show that area's picture (the Chapters art, read from the game's
-     * files once); the others their own. */
+    /* Saves whose sub-chapter is known show its picture, those with only an area known that
+     * area's (the Chapters art, read from the game's files once); the others their own. */
     const char *shown[MAX_ROWS];
     static char art[MAX_ROWS][600];
     const int have_art = chapter_art();
     for (int i = 0; i < count; ++i) {
         shown[i] = pictures ? pictures[i] : NULL;
         const int area = area_of(i);
-        if (have_art && area >= 0) {
-            snprintf(art[i], sizeof(art[i]), "%s/chapter-art-2/area-%d.png", runtime_file_user_dir(), area);
+        if (have_art && subchapter_index[i] >= 0) {
+            snprintf(art[i], sizeof(art[i]), "%s/chapter-art-4/sub-%d.png", runtime_file_user_dir(), subchapter_index[i]);
+            shown[i] = art[i];
+        } else if (have_art && area >= LB_AREA_FIRST) {
+            snprintf(art[i], sizeof(art[i]), "%s/chapter-art-4/lb-%d.png", runtime_file_user_dir(), area - LB_AREA_FIRST);
+            shown[i] = art[i];
+        } else if (have_art && area >= 0) {
+            snprintf(art[i], sizeof(art[i]), "%s/chapter-art-4/area-%d.png", runtime_file_user_dir(), area);
             shown[i] = art[i];
         }
     }
@@ -961,6 +991,130 @@ static const struct { const char *name; int area; uint32_t text; } subchapters[]
     {"Kapanış", 11, 0x9331825bu},
     {"Épilogue", 11, 0x9331825bu},
     {"Epilogo", 11, 0x9331825bu},
+    /* Left Behind's chapters (dc1/dlc1-tasks.bin's table 0x69f74b66): no sub-chapters, each its own
+     * area of that table, LB_AREA_FIRST + its row. */
+    {"Back in a Flash", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Mallrats", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"So Close", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Fun and Games", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"The Enemy of My Enemy", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Escape from Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Je vais faire super vite", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Shopping nocturne", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Si près", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Plaisir et jeux", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"L'ennemi de mon ennemi", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Fuir Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Vado e torno", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Quelle del centro commerciale", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Per un soffio", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Giochi e passatempi", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Il nemico del mio nemico", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Fuga dai Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Gleich zurück", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Einkaufszentrum-Kids", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"So nah", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Spaß und Spiele", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Der Feind meines Feindes", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Flucht aus den Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"En nada", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Niños de centro comercial", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Por poco", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Diversión y juegos", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"El enemigo de mi enemigo", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Escapa de Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Tilbage som et lyn", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Centerhængere", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Så tæt på", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Sjov og ballade", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Min fjendes fjende", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Undslip Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Volto Num Instante", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Ratos de Centro Comercial", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Tão Perto", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Jogos e Diversão", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"O Inimigo do Meu Inimigo", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Foge de Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Zo weer terug", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Shoppers", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Zo dichtbij", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Spelletjes", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"De vijand van mijn vijand", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Ontsnap uit Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"すぐ戻るから", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"モール荒し", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"近くて遠い場所", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"お遊戯の時間", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"敵の敵", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"リバティガーデンからの脱出", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"후딱 갔다 올게요", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"쇼핑중독자", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"얼마 안 남았어", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"장난과 놀이", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"내 적들의 적", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"리버티 가든 탈출", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Paluu hetkessä", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Ostarin jengi", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Niin lähellä", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Leikkiä ja pelejä", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Viholliseni vihollinen", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Pako Liberty Gardensista", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Straks tilbake", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Sentervankere", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Så nære", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Bare moro", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Min fiendes fiende", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Kom deg unna Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Tillbaka på ett kick", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Köpcenterhängare", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Så nära", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Lek och skoj", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Fly från Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"馬上回來", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"商場老鼠", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"差一點點", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"笑話和遊戲", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"我敵人的敵人", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"逃離自由花園", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"\"Скоро вернусь\"", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Приключения в торговом центре", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Так близко", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Шутки и проказы", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Враг моего врага", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Побег из \"Либерти Гарденс\"", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Zaraz wracam", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Szczury z centrum handlowego", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Tak blisko", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Gry i zabawy", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Wróg mojego wroga", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Ucieczka z Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"De regreso en un abrir y cerrar de ojos", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Ratas del centro comercial", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Tan cerca", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"De volta num segundo", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Ratos no shopping", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Por pouco", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Diversão e jogos", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"O inimigo do meu inimigo", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Fuga do Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Επιστρέφω αμέσως", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Παιδιά σε Εμπορικό Κέντρο", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Παρά τρίχα", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Παιχνίδια και διασκέδαση", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Ο εχθρός του εχθρού μου", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Απόδραση από το Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Za chvilku zpátky", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Flákači", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"O fous", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Hry a zábava", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Nepřítel mého nepřítele", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Unikněte z Liberty Gardens", LB_AREA_FIRST + 5, 0xc385cce2u},
+    {"Hemen Dönerim", LB_AREA_FIRST + 0, 0x21f81deau},
+    {"Aylak Fareler", LB_AREA_FIRST + 1, 0x2cbb3b33u},
+    {"Kıl Payı", LB_AREA_FIRST + 2, 0x287a2684u},
+    {"Eğlence", LB_AREA_FIRST + 3, 0xf44ab298u},
+    {"Düşmanımın Düşmanı", LB_AREA_FIRST + 4, 0x363d7681u},
+    {"Özgürlük Bahçeleri'nden Kaç", LB_AREA_FIRST + 5, 0xc385cce2u},
     /* Not sub-chapters: a save after the credits says COMPLETE (Jackson's picture, the last area),
      * the first one of a new game New Game Data (the Prologue's). */
     {"COMPLETE", 11, 0x4a0d5edcu},
@@ -1018,6 +1172,11 @@ static int area_of(int row) {
             subchapter_text[row] = subchapters[i].text;
             break;
         }
+    /* Beyond the Wall has a second text id (0x6b7c145c, "Beyond the Wall"): the same sub-chapter. */
+    const uint32_t text = subchapter_text[row] == 0x6b7c145cu ? 0xeb593133u : subchapter_text[row];
+    subchapter_index[row] = -1;
+    for (int g = 0; text && g < SUBCHAPTER_COUNT; ++g)
+        if (subchapter_order[g] == text) subchapter_index[row] = g;
     areas[row] = area;
     return area;
 }
@@ -1035,10 +1194,11 @@ static void place_of(int row, char *out, size_t size) {
         snprintf(out, size, "%s", chapters[row]);
         return;
     }
-    const char *area_name = runtime_menu_pc_game_text(area_texts[area]);
+    const char *area_name = area < LB_AREA_FIRST ? runtime_menu_pc_game_text(area_texts[area]) : NULL;
     const char *sub_name = subchapter_text[row] ? runtime_menu_pc_game_text(subchapter_text[row]) : NULL;
     if (!sub_name || !sub_name[0]) sub_name = chapters[row];
-    const int alone = subchapter_text[row] == TEXT_COMPLETE || subchapter_text[row] == TEXT_NEW_GAME_DATA;
+    const int alone = subchapter_text[row] == TEXT_COMPLETE || subchapter_text[row] == TEXT_NEW_GAME_DATA ||
+                      area >= LB_AREA_FIRST;
     if (!alone && area_name && area_name[0] && strcmp(area_name, sub_name)) snprintf(out, size, "%s - %s", area_name, sub_name);
     else snprintf(out, size, "%s", sub_name);
 }
@@ -1060,9 +1220,21 @@ static ABI void *row_image(void *out, void *self, int index, uint32_t kind) {
     const ImageSlot image = (ImageSlot)(uintptr_t)gow3_menu_u64(
         (const unsigned char *)(uintptr_t)gow3_menu_u64(areas_list) + 8 * IMAGE_SLOT);
     const int area = index >= 0 && index < atomic_load(&row_count) ? area_of(index) : -1;
-    void *result = image(out, areas_list, area >= 0 ? area : 0, area >= 0 ? kind : 0);
+    const int row = area >= LB_AREA_FIRST ? area - LB_AREA_FIRST : area;
+    void *result = image(out, areas_list, row >= 0 ? row : 0, row >= 0 ? kind : 0);
     /* The picture kind answered with no picture (first word 0, else the art's frame). */
-    if (area >= 0 && kind == PICTURE_KIND) atomic_store(&no_game_picture[index], gow3_menu_u32(out) == 0);
+    if (area >= 0 && kind == PICTURE_KIND) {
+        const uint32_t frame = gow3_menu_u32(out);
+        atomic_store(&no_game_picture[index], frame == 0);
+        /* The sub-chapter's own picture: the game's image ids follow the art's cells, column by
+         * column (areas 0x57 + area: the third column; the cover art 0x37, then sub-chapter g at
+         * 0x38 + g, as the sub-chapter list provider answers 0x38 + its area's first + row). */
+        const int sub = subchapter_index[index];
+        if (frame != 0 && sub >= 0) {
+            const uint32_t id = SUBCHAPTER_IMAGE_FIRST + (uint32_t)sub;
+            memcpy(out, &id, 4);
+        }
+    }
     return result;
 }
 static ABI int row_min(void *self) {

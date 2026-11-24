@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-// gow3 (The Last of Us Remastered): the Chapters page's area pictures, read from the game's own
-// files for the save list in the pause menu, where the game has them unloaded
-// (src/runtime_menu_saves.c). They are one texture, art/general/menu/shot-chapters.tga, streamed
-// from texturedict1/common-tstrm.pak in build/ps4/main/common.psarc: BC1, 2048x4096, its blocks
-// in 8x8 Morton-ordered tiles, upside down; the 12 areas are the right column's 512x256 cells
-// (area i at row i, the torn frame included). Only the zlib blocks of the PSARC that hold the
-// pack's header and that texture's top mip are read. Each area becomes area-<i>.png.
+// gow3 (The Last of Us Remastered): the Chapters page's area and sub-chapter pictures, read from
+// the game's own files for the save list (src/runtime_menu_saves.c). They are one texture,
+// art/general/menu/shot-chapters.tga, streamed from texturedict1/common-tstrm.pak in
+// build/ps4/main/common.psarc: BC1, 2048x4096, its blocks in 8x8 Morton-ordered tiles, upside
+// down, in 512x256 cells (the torn frame included): the 12 areas in the third column, the cover
+// art and the 29 sub-chapters down the first two. Left Behind's (shot-chapters-spdlc1.tga) has its
+// 6 chapters where the first 6 areas are. Only the zlib blocks of the PSARC that hold the pack's
+// header and those textures' top mips are read. Each becomes area-<i>.png, sub-<g>.png or lb-<i>.png.
 
 #include "../gow3gpu.h"
 
@@ -186,7 +187,15 @@ extern "C" int gow3gpu_chapter_art(const char* common_psarc, const char* out_dir
     constexpr const char* kName = "z:/t1ps4/build/main/common/texture1/art/general/menu/shot-chapters.tga";
     // The torn-paper cut of every picture (BC4, 512x256: a cell's size), the game's alpha for it.
     constexpr const char* kMask = "z:/t1ps4/build/main/common/texture1/art/general/menu/shot-mask.tga";
-    constexpr int kAreas = 12, kCellWidth = 512, kCellHeight = 256, kColumn = 2;
+    // The cells: the 12 areas in the third column (area i at row i); the cover art, then the 29
+    // sub-chapters in story order down the first column and on down the second (sub-chapter g at
+    // cell g + 1 of the first two columns, 16 rows each).
+    constexpr int kAreas = 12, kSubchapters = 29, kCellWidth = 512, kCellHeight = 256, kAreaColumn = 2;
+    constexpr int kColumns = 3, kRows = 16;
+    // Left Behind's (the Chapters list in Left Behind): its 6 chapters in the same cells as the
+    // first 6 areas, in their own texture. Each becomes lb-<i>.png.
+    constexpr const char* kLeftBehind = "z:/t1ps4/build/main/common/texture1/art/general/menu/shot-chapters-spdlc1.tga";
+    constexpr int kLeftBehindChapters = 6;
     Psarc psarc;
     Psarc::Entry pack;
     if (!common_psarc || !psarc.Open(common_psarc) || !psarc.Find(kPack, pack)) return 0;
@@ -203,29 +212,36 @@ extern "C" int gow3gpu_chapter_art(const char* common_psarc, const char* out_dir
         const auto hit = std::search(records.begin(), records.end(), texture, texture + std::strlen(texture));
         return hit == records.end() || hit - records.begin() < 0x40 ? nullptr : &*hit;
     };
-    const unsigned char* name = record(kName);
     const unsigned char* mask_name = record(kMask);
-    if (!name) return 0;
-    const uint32_t offset = Le32(name - 0x38), format = Le32(name - 0x24);
-    const int width = int(Le32(name - 0x18)), height = int(Le32(name - 0x14));
-    if (format != 0x47 || width != 2048 || height != 4096) {
-        std::printf("Chapter art: unexpected texture (format %#x, %dx%d)\n", format, width, height);
-        return 0;
-    }
-    const int bw = width / 4, bh = height / 4;
-    std::vector<unsigned char> blocks;
-    if (!psarc.Read(pack, data_base + offset, uint64_t(bw) * bh * 8, blocks)) return 0;
-    // Only the right column's cells: decode the tiles that cover it.
-    std::vector<unsigned char> image(size_t(width) * height * 4, 0);
-    const int tiles_wide = bw / 8, x0 = kColumn * kCellWidth / 32, x1 = (kColumn + 1) * kCellWidth / 32;
-    for (int ty = 0; ty < bh / 8; ++ty) {
-        for (int tx = x0; tx < x1 && tx < tiles_wide; ++tx) {
-            const unsigned char* tile = blocks.data() + (size_t(ty) * tiles_wide + tx) * 64 * 8;
-            for (int y = 0; y < 8; ++y)
-                for (int x = 0; x < 8; ++x)
-                    DecodeBc1(tile + Morton8(x, y) * 8, image.data(), width, (tx * 8 + x) * 4, (ty * 8 + y) * 4);
+    constexpr int width = 2048, height = 4096;
+    // A chapters texture's top mip, only the three columns of pictures (the tiles that cover them).
+    auto decode = [&](const char* texture, std::vector<unsigned char>& image) -> bool {
+        const unsigned char* name = record(texture);
+        if (!name) return false;
+        const uint32_t offset = Le32(name - 0x38), format = Le32(name - 0x24);
+        if (format != 0x47 || Le32(name - 0x18) != uint32_t(width) || Le32(name - 0x14) != uint32_t(height)) {
+            std::printf("Chapter art: unexpected texture %s (format %#x, %ux%u)\n", texture, format,
+                        Le32(name - 0x18), Le32(name - 0x14));
+            return false;
         }
-    }
+        const int bw = width / 4, bh = height / 4;
+        std::vector<unsigned char> blocks;
+        if (!psarc.Read(pack, data_base + offset, uint64_t(bw) * bh * 8, blocks)) return false;
+        image.assign(size_t(width) * height * 4, 0);
+        const int tiles_wide = bw / 8, x1 = kColumns * kCellWidth / 32;
+        for (int ty = 0; ty < bh / 8; ++ty) {
+            for (int tx = 0; tx < x1 && tx < tiles_wide; ++tx) {
+                const unsigned char* tile = blocks.data() + (size_t(ty) * tiles_wide + tx) * 64 * 8;
+                for (int y = 0; y < 8; ++y)
+                    for (int x = 0; x < 8; ++x)
+                        DecodeBc1(tile + Morton8(x, y) * 8, image.data(), width, (tx * 8 + x) * 4, (ty * 8 + y) * 4);
+            }
+        }
+        return true;
+    };
+    std::vector<unsigned char> image, lb_image;
+    if (!decode(kName, image)) return 0;
+    if (!decode(kLeftBehind, lb_image)) std::puts("Chapter art: no Left Behind pictures");
     // The mask (upside down too), and the part of the cell it keeps.
     std::vector<unsigned char> mask(size_t(kCellWidth) * kCellHeight, 255);
     int left = 0, top = 0, right = kCellWidth, bottom = kCellHeight;
@@ -259,12 +275,17 @@ extern "C" int gow3gpu_chapter_art(const char* common_psarc, const char* out_dir
     const int out_width = right - left, out_height = bottom - top;
     int written = 0;
     std::vector<unsigned char> cell(size_t(kCellWidth) * kCellHeight * 4), cut(size_t(out_width) * out_height * 4);
-    for (int area = 0; area < kAreas; ++area) {
-        // Upside down: area 0 is the top row once flipped.
+    for (int picture = 0; picture < kAreas + kSubchapters + kLeftBehindChapters; ++picture) {
+        const int sub = picture - kAreas, lb = picture - kAreas - kSubchapters;
+        if (lb >= 0 && lb_image.empty()) break;
+        const int column = sub < 0 || lb >= 0 ? kAreaColumn : (sub + 1) / kRows;
+        const int row = sub < 0 ? picture : lb >= 0 ? lb : (sub + 1) % kRows;
+        const std::vector<unsigned char>& source_image = lb >= 0 ? lb_image : image;
+        // Upside down: row 0 is the top row once flipped.
         for (int y = 0; y < kCellHeight; ++y) {
-            const int source = height - 1 - (area * kCellHeight + y);
+            const int source = height - 1 - (row * kCellHeight + y);
             std::memcpy(cell.data() + size_t(y) * kCellWidth * 4,
-                        image.data() + (size_t(source) * width + kColumn * kCellWidth) * 4, size_t(kCellWidth) * 4);
+                        source_image.data() + (size_t(source) * width + column * kCellWidth) * 4, size_t(kCellWidth) * 4);
         }
         // The mask's alpha, cut to the part it keeps.
         for (int y = 0; y < out_height; ++y)
@@ -278,13 +299,15 @@ extern "C" int gow3gpu_chapter_art(const char* common_psarc, const char* out_dir
         void* png = tdefl_write_image_to_png_file_in_memory(cut.data(), out_width, out_height, 4, &png_size);
         if (!png) continue;
         char path[1024];
-        std::snprintf(path, sizeof(path), "%s/area-%d.png", out_dir, area);
+        if (sub < 0) std::snprintf(path, sizeof(path), "%s/area-%d.png", out_dir, picture);
+        else if (lb < 0) std::snprintf(path, sizeof(path), "%s/sub-%d.png", out_dir, sub);
+        else std::snprintf(path, sizeof(path), "%s/lb-%d.png", out_dir, lb);
         if (FILE* f = std::fopen(path, "wb")) {
             written += std::fwrite(png, 1, png_size, f) == png_size;
             std::fclose(f);
         }
         mz_free(png);
     }
-    std::printf("Chapter art: %d area pictures from %s\n", written, kPack);
+    std::printf("Chapter art: %d area, sub-chapter and Left Behind pictures from %s\n", written, kPack);
     return written;
 }
