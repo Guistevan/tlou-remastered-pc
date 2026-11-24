@@ -407,7 +407,12 @@ static int is_list_site(uintptr_t site, int index) {
 
 static ABI __attribute__((noinline)) const char *row_label(void *self, int index, int part) {
     (void)self;
-    if (index < 0 || index >= atomic_load(&row_count)) return "";
+    if (index < 0) return "";
+    if (index >= atomic_load(&row_count)) {
+        /* The extra row of a one-row list (row_max): its caller is the list's. */
+        is_list_site((uintptr_t)__builtin_return_address(0), index);
+        return "";
+    }
     if (index == 0 && atomic_load(&new_first)) return part == 0 ? runtime_menu_pc_new_save_text() : "";
     if (part != 0) return "";
     if (is_list_site((uintptr_t)__builtin_return_address(0), index) || !dates[index][0]) return names[index];
@@ -1244,6 +1249,11 @@ static ABI int row_min(void *self) {
 static ABI int row_max(void *self) {
     (void)self;
     const int count = atomic_load(&row_count);
+    /* One row (Left Behind's single save): the list asks only for the shown row, like the panel,
+     * so its caller is never told apart and it shows the panel's lines (the middle one, cut).
+     * Until a list caller is known, a second, empty row makes it ask for another row (row_label);
+     * it goes once the caller is known (the next frame). */
+    if (count == 1 && !list_site_count) return 1;
     return count > 0 ? count - 1 : 0;
 }
 
