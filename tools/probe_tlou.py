@@ -573,6 +573,22 @@ def main():
     cache = user / "cache"
     if cache.exists():
         env.setdefault("GOW3_GPU_CACHE_DIR", str(cache.resolve()))
+    # Custom volumetric shaders must enter the warm-up set before their first draw.
+    # The renderer rewrites its recent-use order during play.
+    game_cache = Path(env.get("GOW3_GPU_CACHE_DIR", cache)) / "CUSA00552"
+    priority = game_cache / "volumetric-priority.txt"
+    if priority.is_file():
+        order = game_cache / "warmup-order.bin"
+        header = "gow3 warm-up order 1"
+        recent = order.read_text(encoding="ascii").splitlines() if order.exists() else []
+        if not recent or recent[0] == header:
+            pinned = priority.read_text(encoding="ascii").splitlines()
+            names = dict.fromkeys(pinned + recent[1:])
+            updated = "\n".join([header, *names, ""]).encode("ascii")
+            if not order.exists() or order.read_bytes() != updated:
+                temporary = order.with_suffix(".priority.tmp")
+                temporary.write_bytes(updated)
+                temporary.replace(order)
     env.setdefault("GOW3_CONFIG", str(user / "tlou.ini"))
     # A draw whose pipeline is still compiling in the background is skipped: the curtain on the
     # title screen and the characters' hair flashed white the first time they were drawn, and the
