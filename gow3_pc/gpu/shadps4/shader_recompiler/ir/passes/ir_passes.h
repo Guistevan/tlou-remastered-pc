@@ -54,6 +54,12 @@ void QuarterDepthPass(IR::Program& program);
 /// the texture they sample. Returns whether it changed the shader. GOW3_QUARTER_GRID=0: off.
 bool QuarterGridOn();
 bool QuarterGridPass(IR::Program& program);
+/// gow3 24 Nov 2026 (ao_center_texel_pass.cpp, The Last of Us #58): the ambient occlusion shader
+/// reads its center depth and normals at a texel's center, not on the boundary between two
+/// (vertical stripes on RTX GPUs). GOW3_AO_CENTER_TEXEL=0: off. AoCenterTexel: whether this
+/// shader is changed (its cached binary has its own name).
+bool AoCenterTexel(u64 pgm_hash);
+void AoCenterTexelPass(IR::Program& program);
 /// gow3 11 Nov 2026: workgroup barriers inside an if whose condition differs between threads run
 /// for every thread, the if's LDS writes kept to the threads it selects (shared_memory_barrier_pass
 /// .cpp). On while UniformBarriersOn() (the pipeline cache sets it).

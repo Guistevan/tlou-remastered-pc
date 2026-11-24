@@ -128,6 +128,9 @@ IR::Program TranslateProgram(const std::span<const u32>& code, Pools& pools, Inf
     // And the materials' grid for those shadows follows the texture they sample
     // (quarter_grid_pass.cpp; tools/probe_tlou.py draws them at half the render size).
     Shader::Optimization::QuarterGridPass(program);
+    // gow3 24 Nov 2026 (The Last of Us #58): the ambient occlusion's center reads on a texel's
+    // center (ao_center_texel_pass.cpp).
+    Shader::Optimization::AoCenterTexelPass(program);
     if (info.sw_stage == SwStage::TessellationControl) {
         Shader::Optimization::TessellationPreprocess(program, runtime_info);
         Shader::Optimization::HullShaderTransform(program, runtime_info);

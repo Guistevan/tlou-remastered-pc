@@ -71,10 +71,13 @@ static std::string ShaderBinaryName(u64 pgm_hash, size_t perm_idx) {
     // gow3 12 Nov 2026: and The Last of Us' quarter-size depth written at the ambient shadows'
     // pixels (quarter_depth_pass.cpp), "_qd2".
     // gow3 23 Nov 2026: and the flat buffer as a uniform block (Shader::FlatbufUniform), "_fu".
-    return fmt::format("{:#018x}_{}{}{}{}{}", pgm_hash, perm_idx,
+    // gow3 24 Nov 2026: and the ambient occlusion's center reads on a texel's center
+    // (ao_center_texel_pass.cpp, #58), "_aoc".
+    return fmt::format("{:#018x}_{}{}{}{}{}{}", pgm_hash, perm_idx,
                        Shader::Optimization::MultiwaveLdsBarriers(pgm_hash) ? "_lds4" : "",
                        lanes > 1 ? fmt::format("_lanes{}", lanes) : std::string{},
                        Shader::Optimization::QuarterDepthPointSample(pgm_hash) ? "_qd2" : "",
+                       Shader::Optimization::AoCenterTexel(pgm_hash) ? "_aoc" : "",
                        Shader::FlatbufUniform() ? "_fu" : "");
 }
 } // namespace Serialization
