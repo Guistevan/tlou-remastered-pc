@@ -857,6 +857,7 @@ void ResetControls() {
     s.mouse_invert_x = false;
     s.mouse_aim_sens = 1.0f;
     s.mouse_scope_sens = 1.0f;
+    s.mouse_scope_on = true;
     s.mouse_vertical = 1.0f;
     s.prompts = -1;
     s.stick_speed = 1.0f;
@@ -1143,9 +1144,20 @@ void ControlsTab() {
         changed |= PercentRow("Mouse aim sensitivity", s.mouse_aim_sens, 10, 500,
                               "While aiming (the aim button held): the mouse sensitivity times this. Below 100% "
                               "makes aiming finer.");
+        Row("Separate scope sensitivity");
+        bool scope_on = s.mouse_scope_on;
+        if (ImGui::Checkbox("##value", &scope_on)) {
+            s.mouse_scope_on = scope_on;
+            changed = true;
+        }
+        Help("On: scopes turn slower with their zoom and the scope sensitivity below applies. Off: scopes "
+             "turn like normal aiming (the aim sensitivity alone).");
+        ImGui::PopID();
+        ImGui::BeginDisabled(!s.mouse_scope_on);
         changed |= PercentRow("Mouse scope sensitivity", s.mouse_scope_sens, 10, 200,
                               "With a scope (sniper rifle, scoped weapons): the aim sensitivity times this, on "
                               "top of the zoom's own slowdown. Below 100% makes scoped aiming finer.");
+        ImGui::EndDisabled();
         changed |= PercentRow("Mouse up/down speed", s.mouse_vertical, 25, 300,
                               "Looking up and down compared with left and right.");
         Row("Invert mouse up/down");

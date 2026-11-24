@@ -1117,6 +1117,18 @@ CONTROL_TEXT = {
     'Sensibilidade ao mirar': ('Aim sensitivity', 'Sensibilidad al apuntar', 'Sensibilité en visée',
                                'Empfindlichkeit beim Zielen', 'Sensibilità in mira', 'Czułość podczas celowania',
                                'Чувствительность при прицеливании', 'エイム時の感度'),
+    'Sensibilidade própria com luneta': ('Separate scope sensitivity', 'Sensibilidad propia con mira telescópica',
+                                         'Sensibilité de lunette séparée', 'Eigene Zielfernrohr-Empfindlichkeit',
+                                         'Sensibilità mirino separata', 'Osobna czułość z lunetą',
+                                         'Отдельная чувствительность с прицелом', 'スコープ専用の感度'),
+    'Desligada: a luneta usa a mesma sensibilidade de quando se mira.': (
+        'Off: scopes use the same sensitivity as aiming.', 'Desactivada: la mira telescópica usa la misma sensibilidad que al apuntar.',
+        'Désactivée : la lunette utilise la même sensibilité que la visée.',
+        'Aus: Zielfernrohre nutzen dieselbe Empfindlichkeit wie beim Zielen.',
+        'Disattivata: il mirino usa la stessa sensibilità della mira.',
+        'Wyłączona: luneta używa tej samej czułości co celowanie.',
+        'Выключено: прицел использует ту же чувствительность, что и прицеливание.',
+        'オフ：スコープはエイム時と同じ感度を使います。'),
     'Sensibilidade com luneta': ('Scope sensitivity', 'Sensibilidad con mira telescópica', 'Sensibilité avec lunette',
                                  'Empfindlichkeit mit Zielfernrohr', 'Sensibilità con mirino', 'Czułość z lunetą',
                                  'Чувствительность с прицелом', 'スコープ時の感度'),
@@ -4039,12 +4051,14 @@ class Launcher(tk.Tk):
         invert_x = tk.BooleanVar(value=ini.get("mouse_invert_x", "0") == "1")
         sens, aim = tk.IntVar(value=percent("mouse_sens")), tk.IntVar(value=percent("mouse_aim_sens"))
         scope = tk.IntVar(value=percent("mouse_scope_sens"))
+        scope_on = tk.BooleanVar(value=ini.get("mouse_scope_on", "1") != "0")
         push_classic = tk.BooleanVar(value=ini.get("push_steer_classic", "0") == "1")
         pending = []
 
         def save():
             write_ini({"mouse": int(enabled.get()), "mouse_sens": f"{sens.get() / 100:.2f}",
                        "mouse_aim_sens": f"{aim.get() / 100:.2f}", "mouse_scope_sens": f"{scope.get() / 100:.2f}",
+                       "mouse_scope_on": int(scope_on.get()),
                        "mouse_invert": int(invert.get()),
                        "mouse_invert_x": int(invert_x.get()), "push_steer_classic": int(push_classic.get())})
 
@@ -4065,6 +4079,9 @@ class Launcher(tk.Tk):
                      highlightthickness=0, bd=0).pack(side="left")
             tk.Label(row, textvariable=variable, width=5, anchor="e", bg=PANEL, fg=TEXT, font=("Segoe UI", 10)).pack(side="left")
             tk.Label(row, text="%", bg=PANEL, fg=MUTED, font=("Segoe UI", 10)).pack(side="left")
+        self.option(body, "Sensibilidade própria com luneta", scope_on, save)
+        tk.Label(body, text=self.debug_text("Desligada: a luneta usa a mesma sensibilidade de quando se mira."),
+                 bg=PANEL, fg=MUTED, font=("Segoe UI", 9), wraplength=520, justify="left").pack(anchor="w", padx=(22, 0))
         tk.Frame(body, bg=PANEL, height=8).pack()
         self.option(body, "Inverter eixo vertical", invert, save)
         self.option(body, "Inverter eixo horizontal", invert_x, save)
@@ -4088,6 +4105,7 @@ class Launcher(tk.Tk):
             sens.set(100)
             aim.set(100)
             scope.set(100)
+            scope_on.set(True)
             save()
 
         self.reset_link(outer, reset)

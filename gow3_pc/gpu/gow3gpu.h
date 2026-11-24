@@ -92,6 +92,8 @@ float gow3gpu_controls_mouse_aim_sens(void);
 float gow3gpu_controls_mouse_vertical(void);
 /* 19 Nov 2026: with a scope, times the aim sensitivity (GitHub #168). */
 float gow3gpu_controls_mouse_scope_sens(void);
+/* 23 Nov 2026: 0: a scope turns with the aim sensitivity alone. */
+int gow3gpu_controls_mouse_scope_on(void);
 int gow3gpu_controls_mouse_invert_x(void);
 /* 22 Nov 2026 (GitHub #211): the old steering of pushed dumpsters and pallets (launcher option). */
 int gow3gpu_controls_push_steer_classic(void);
@@ -113,7 +115,7 @@ int gow3gpu_settings_light_shadow_distance(void);
  * from any thread. */
 enum {
     GOW3_PC_DISPLAY_MODE, GOW3_PC_VSYNC, GOW3_PC_FPS_LIMIT, GOW3_PC_ANTI_ALIASING, GOW3_PC_SHARPENING,
-    GOW3_PC_PERF_OVERLAY, GOW3_PC_MOUSE_SENS, GOW3_PC_MOUSE_AIM_SENS, GOW3_PC_MOUSE_SCOPE_SENS, GOW3_PC_MOUSE_VERTICAL,
+    GOW3_PC_PERF_OVERLAY, GOW3_PC_MOUSE_SENS, GOW3_PC_MOUSE_AIM_SENS, GOW3_PC_MOUSE_SCOPE_ON, GOW3_PC_MOUSE_SCOPE_SENS, GOW3_PC_MOUSE_VERTICAL,
     GOW3_PC_MOUSE_INVERT, GOW3_PC_VIBRATION, GOW3_PC_SETTING_COUNT
 };
 int gow3gpu_pc_setting(int setting);

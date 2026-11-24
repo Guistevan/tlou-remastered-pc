@@ -453,10 +453,14 @@ static ABI void *tlou_aim_input(void *out, unsigned char *controller, void *stic
             zoom = zoom < 0.02f ? 0.02f : zoom > 2.0f ? 2.0f : zoom;
         }
         /* a scope (field of view under 45 degrees): the settings' scope sensitivity too, whose
-         * 100% is a fifth of the zoom's slowdown (20 Nov 2026: the player's 20% in the sniper
-         * scene made the default) */
-        const float scope = gow3gpu_controls_mouse_scope_sens();
-        if (isfinite(fov) && fov < 45.0f && scope > 0.0f) zoom *= 0.2f * scope;
+         * 100% is 0.4 of the zoom's slowdown (23 Nov 2026: the player's 200% of the former 0.2
+         * made the default). With the separate scope sensitivity off a scope turns like normal
+         * aiming: the aim sensitivity alone. */
+        if (isfinite(fov) && fov < 45.0f) {
+            const float scope = gow3gpu_controls_mouse_scope_sens();
+            if (!gow3gpu_controls_mouse_scope_on()) zoom = 1.0f;
+            else if (scope > 0.0f) zoom *= 0.4f * scope;
+        }
         const float per_count = look_scale(1) * zoom;
         if (dx != 0.0f) {
             const float angle = -dx * per_count * look_invert_x();
