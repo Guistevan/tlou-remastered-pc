@@ -3291,6 +3291,39 @@ void Rasterizer::DispatchDirect() {
     DispatchRecord(pipeline);
 }
 
+// gow3 24 Nov 2026 diagnostics (GOW3_ASC_STATS=1): compute dispatches per shader and queue (the
+// asynchronous compute queues or the graphics queue), every 5 s.
+void Rasterizer::NoteDispatchOrigin(u64 pgm_hash, bool asc) {
+    struct Counts {
+        u64 asc = 0, gfx = 0;
+    };
+    static std::unordered_map<u64, Counts> counts;
+    static auto last = std::chrono::steady_clock::now();
+    auto& c = counts[pgm_hash];
+    (asc ? c.asc : c.gfx)++;
+    const auto now = std::chrono::steady_clock::now();
+    if (now - last < std::chrono::seconds{5}) {
+        return;
+    }
+    last = now;
+    std::vector<std::pair<u64, Counts>> rows(counts.begin(), counts.end());
+    std::ranges::sort(rows, std::greater{}, [](const auto& r) { return r.second.asc + r.second.gfx; });
+    u64 asc_total = 0, gfx_total = 0;
+    std::string text;
+    for (const auto& [hash, n] : rows) {
+        asc_total += n.asc;
+        gfx_total += n.gfx;
+        if (text.size() < 900) {
+            text += fmt::format(" {:08x}={}a/{}g", hash, n.asc, n.gfx);
+        }
+    }
+    std::printf("Dispatch origin (5 s): %llu on async compute queues, %llu on the graphics queue;%s\n",
+                static_cast<unsigned long long>(asc_total), static_cast<unsigned long long>(gfx_total),
+                text.c_str());
+    std::fflush(stdout);
+    counts.clear();
+}
+
 void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     if (BarrierStatsEnabled()) {
         g_barrier_stats_shader = pipeline->GetStage(Shader::SwStage::Compute).pgm_hash;
@@ -3307,6 +3340,9 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
     const auto& cs_program = CsRegs();
 
     const auto& cs = pipeline->GetStage(Shader::SwStage::Compute);
+    if (AmdGpu::AscStatsEnabled()) {
+        NoteDispatchOrigin(cs.pgm_hash, AmdGpu::IsAscProgram(cs_program.Address<u64>()));
+    }
     // After the resource binding: its transfers (image uploads, downloads) mark themselves.
     const auto mark = [&] {
         if (auto* profiler = GpuProfiler::Get()) {

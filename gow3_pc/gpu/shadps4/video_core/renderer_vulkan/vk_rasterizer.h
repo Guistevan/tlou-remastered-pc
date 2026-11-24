@@ -134,6 +134,7 @@ public:
     /// gow3: GOW3_EARLY_SUBMIT=1: the frame's work goes to the GPU in parts while it is
     /// recorded, so the GPU starts drawing before the frame is complete (GPU command thread).
     void MaybeSubmitEarly();
+    void NoteDispatchOrigin(u64 pgm_hash, bool asc); ///< GOW3_ASC_STATS diagnostics
     u32 draws_since_submit = 0;
     std::chrono::steady_clock::time_point last_early_submit{};
     std::atomic<u64> early_submits{0};

@@ -3,6 +3,8 @@
 
 #include "gow3_profiler.h"
 #ifdef _WIN32
+#include <mutex>
+#include <unordered_set>
 #include <windows.h>
 #endif
 #include <array>
@@ -2707,6 +2709,27 @@ static void NoteComputeWaitDrain(const PM4CmdWaitRegMem& wait, bool satisfied) {
     }
 }
 
+// gow3 24 Nov 2026 diagnostics (GOW3_ASC_STATS=1): the code addresses of the compute programs the
+// asynchronous compute queues dispatch, so the rasterizer can tell their dispatches apart
+// (Rasterizer::NoteDispatchOrigin): how much GPU work an async compute queue could overlap.
+bool AscStatsEnabled() {
+    static const bool on = [] {
+        const char* env = std::getenv("GOW3_ASC_STATS");
+        return env && env[0] == '1';
+    }();
+    return on;
+}
+static std::mutex asc_programs_mutex;
+static std::unordered_set<u64> asc_programs;
+void NoteAscProgram(u64 address) {
+    std::scoped_lock lock{asc_programs_mutex};
+    asc_programs.insert(address);
+}
+bool IsAscProgram(u64 address) {
+    std::scoped_lock lock{asc_programs_mutex};
+    return asc_programs.contains(address);
+}
+
 template <bool is_indirect>
 Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
     FIBER_ENTER(acb_task_name[vqid]);
@@ -2931,6 +2954,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             if (!rasterizer || (cs_program.dispatch_initiator & 1) == 0) {
                 break;
             }
+            if (AscStatsEnabled()) {
+                NoteAscProgram(cs_program.Address<u64>());
+            }
             const auto cmd_address = reinterpret_cast<const void*>(header);
             rasterizer->ScopeMarker("asc[{}]:{}:DispatchDirect",
                                     fmt::make_format_args(vqid, cmd_address),
@@ -2949,6 +2975,9 @@ Liverpool::Task Liverpool::ProcessCompute(std::span<const u32> acb, u32 vqid) {
             }
             if (!rasterizer || (cs_program.dispatch_initiator & 1) == 0) {
                 break;
+            }
+            if (AscStatsEnabled()) {
+                NoteAscProgram(cs_program.Address<u64>());
             }
             const auto cmd_address = reinterpret_cast<const void*>(header);
             rasterizer->ScopeMarker("asc[{}]:{}:DispatchIndirect",

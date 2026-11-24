@@ -35,6 +35,11 @@ struct VideoOutPort;
 
 namespace AmdGpu {
 
+/// gow3 diagnostics (GOW3_ASC_STATS=1, liverpool.cpp): compute programs dispatched by the
+/// asynchronous compute queues.
+bool AscStatsEnabled();
+bool IsAscProgram(u64 address);
+
 struct PM4CmdWaitRegMem;
 
 union PM4Header;
