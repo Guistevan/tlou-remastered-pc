@@ -1,0 +1,115 @@
+// SPDX-FileCopyrightText: Copyright 2026 gow3_pc contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+// gow3 24 Nov 2026 (The Last of Us Remastered #55; the technique is Guistevan's, PR #230): the
+// sun's and the moon's volumetric light as a 512x512 grid of camera rays, written over the
+// epipolar lines the game's line samplers (cs bb1d430e, 05866787) just wrote into the same image.
+// Run right after them (vk_volumetric_light.cpp), bound with their pipeline layout: the bindings
+// and the push constants below are theirs, as the shader recompiler declares them; the port
+// checks them against the translated shader before using this one.
+//
+// Each cell integrates the visible part of its ray inside the light's volume, clipped at the
+// scene depth, with 96 shadow samples staggered between neighboring cells. It stores
+// -2 - visibility (a value the game's lines never hold: the resolve knows the grid by it) and
+// the ray's view depth, which the resolve uses to keep silhouettes sharp
+// (vol_directional_resolve.frag).
+
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer GuestConstants {
+    uint data[];
+} constants;
+
+layout(push_constant, std430) uniform AuxData {
+    float xoffset;
+    float yoffset;
+    float xscale;
+    float yscale;
+    uvec4 ud_regs0;
+    uvec4 ud_regs1;
+    uvec4 ud_regs2;
+    uvec4 ud_regs3;
+    uvec4 buf_offsets0;
+    uvec4 buf_offsets1;
+    uvec2 buf_offsets2;
+    uint motion_param;
+    uint scene_size;
+} push_data;
+
+layout(set = 0, binding = 2) uniform texture2DArray shadow_cascades; // cs_img1
+layout(set = 0, binding = 4) uniform texture2D scene_depth;          // cs_img3
+layout(set = 0, binding = 5) uniform writeonly image2D atlas;        // cs_img4
+layout(set = 0, binding = 6) uniform sampler point_sampler;          // cs_samp0
+
+float lightParam(uint offset, uint index) {
+    return uintBitsToFloat(constants.data[offset + index]);
+}
+
+vec4 lightRow(uint offset, uint index) {
+    return vec4(lightParam(offset, index), lightParam(offset, index + 1u),
+                lightParam(offset, index + 2u), lightParam(offset, index + 3u));
+}
+
+// The part of the ray (in view units along dir) inside the light's volume: three slabs, the
+// first open on one side, and the volume's far limit.
+vec2 lightInterval(uint offset, vec3 dir) {
+    vec4 a = lightRow(offset, 104u), b = lightRow(offset, 108u), c = lightRow(offset, 112u);
+    vec3 rate = vec3(dot(a.xyz, dir), dot(b.xyz, dir), dot(c.xyz, dir));
+    vec3 inv = 1.0 / mix(rate, vec3(1e-12), lessThan(abs(rate), vec3(1e-12)));
+    float capB = lightParam(offset, 116u), capC = lightParam(offset, 117u);
+    float ta = -a.w * inv.x;
+    vec2 tb = vec2(-b.w, capB) * inv.y, tc = vec2(-c.w, capC) * inv.z;
+    float start = max(0.0, max(inv.x > 0.0 ? -100000.0 : ta,
+                               max(min(tb.x, tb.y), min(tc.x, tc.y))));
+    float end = min(lightParam(offset, 127u) / dir.z,
+                    min(inv.x > 0.0 ? ta : 100000.0, min(max(tb.x, tb.y), max(tc.x, tc.y))));
+    return vec2(start, max(start, end));
+}
+
+void main() {
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(notEqual(imageSize(atlas), ivec2(512))) || any(greaterThanEqual(pixel, ivec2(512)))) {
+        return;
+    }
+    const uint off = bitfieldExtract(push_data.buf_offsets0.x, 0, 8) >> 2u;
+    const vec2 uv = (vec2(pixel) + 0.5) / 512.0;
+    const vec4 camera = lightRow(off, 4u);
+    const vec3 dir = normalize(vec3(uv * camera.xy + camera.zw, 1.0));
+    const vec2 extent = lightInterval(off, dir);
+    const float rawDepth = textureLod(sampler2D(scene_depth, point_sampler), uv, 0.0).x;
+    const float z = min(lightParam(off, 127u), lightParam(off, 51u) / (rawDepth - lightParam(off, 50u)));
+    const float end = min(extent.y, z / dir.z);
+    const vec3 lightDir = lightRow(off, 12u).xyz;
+    const int cascades = clamp(int(constants.data[off + 11u]), 1, 8);
+    const vec2 shadowTexel = 1.0 / vec2(textureSize(shadow_cascades, 0).xy);
+    float visibility = 0.0;
+    if (end > extent.x) {
+        // Neighboring cells sample different positions of each interval (a fixed pattern, so a
+        // paused photo looks the same).
+        const float phase = fract(0.5 + float(pixel.x) * 0.754877666 + float(pixel.y) * 0.569840296);
+        for (int i = 0; i < 96; ++i) {
+            const vec3 pos = dir * mix(extent.x, end, (float(i) + phase) / 96.0);
+            int cascade = 0;
+            while (cascade + 1 < cascades && pos.z > lightParam(off, 120u + uint(cascade))) {
+                ++cascade;
+            }
+            const uint base = 128u + 20u * uint(cascade);
+            const vec4 pt = vec4(pos, 1.0);
+            vec2 st = vec2(dot(lightRow(off, base), pt), dot(lightRow(off, base + 4u), pt));
+            // Across the shadow texel's footprint as the ray advances.
+            const vec2 offset = fract((float(i) + phase) * vec2(0.618034, 0.414214)) - 0.5;
+            st += 2.0 * offset * shadowTexel;
+            const float shadow = textureLod(sampler2DArray(shadow_cascades, point_sampler),
+                                            vec3(st, float(cascade)), 0.0).x;
+            const vec4 coord = vec4(st, shadow, 1.0);
+            const vec3 blocker = vec3(dot(lightRow(off, base + 8u), coord),
+                                      dot(lightRow(off, base + 12u), coord),
+                                      dot(lightRow(off, base + 16u), coord));
+            visibility += smoothstep(-0.022, 0.022, dot(lightDir, blocker - pos)) / 96.0;
+        }
+    }
+    imageStore(atlas, pixel, vec4(-2.0 - visibility, z, 0.0, 0.0));
+}

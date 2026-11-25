@@ -1,0 +1,135 @@
+// SPDX-FileCopyrightText: Copyright 2026 gow3_pc contributors
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+// gow3 24 Nov 2026 (The Last of Us Remastered #55; the technique is Guistevan's, PR #230): a spot
+// light's volumetric light (the truck's spotlight, cs 06e1a806; with PROJECTOR, the enemies'
+// flashlights, cs cdecdf59, whose beam carries a projected pattern) as a 512x512 grid of camera
+// rays, written over the epipolar lines the game's shader just wrote (vk_volumetric_light.cpp).
+// Bound with that shader's pipeline layout: the bindings and push constants are its own, as the
+// recompiler declares them (SHADOW_ARRAY: the permutation whose shadow map is an array).
+//
+// Each cell integrates the visible part of its ray inside the light's cone and range, clipped at
+// the scene depth, with 96 shadow samples staggered between neighboring cells, each weighted by
+// the cone's falloff and the distance to the light. It stores -2 - visibility and the ray's view
+// depth for the resolve (vol_spot_resolve.frag).
+
+#version 450
+#extension GL_EXT_samplerless_texture_functions : require
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer GuestConstants {
+    uint data[];
+} constants;
+
+layout(push_constant, std430) uniform AuxData {
+    float xoffset;
+    float yoffset;
+    float xscale;
+    float yscale;
+    uvec4 ud_regs0;
+    uvec4 ud_regs1;
+    uvec4 ud_regs2;
+    uvec4 ud_regs3;
+    uvec4 buf_offsets0;
+    uvec4 buf_offsets1;
+    uvec2 buf_offsets2;
+    uint motion_param;
+    uint scene_size;
+} push_data;
+
+#ifdef SHADOW_ARRAY
+layout(set = 0, binding = 2) uniform texture2DArray shadow_map; // cs_img1
+#else
+layout(set = 0, binding = 2) uniform texture2D shadow_map;      // cs_img1
+#endif
+#ifdef PROJECTOR
+layout(set = 0, binding = 3) uniform texture2D pattern_map;     // cs_img2
+layout(set = 0, binding = 4) uniform texture2D scene_depth;     // cs_img3
+layout(set = 0, binding = 5) uniform writeonly image2D atlas;   // cs_img4
+layout(set = 0, binding = 6) uniform sampler point_sampler;     // cs_samp0
+#else
+layout(set = 0, binding = 3) uniform texture2D scene_depth;     // cs_img2
+layout(set = 0, binding = 4) uniform writeonly image2D atlas;   // cs_img3
+layout(set = 0, binding = 5) uniform sampler point_sampler;     // cs_samp0
+#endif
+
+vec4 spotRow(uint off, uint i) {
+    return vec4(uintBitsToFloat(constants.data[off + i]), uintBitsToFloat(constants.data[off + i + 1u]),
+                uintBitsToFloat(constants.data[off + i + 2u]), uintBitsToFloat(constants.data[off + i + 3u]));
+}
+
+float shadowDepth(uint off, vec2 st) {
+#ifdef SHADOW_ARRAY
+    return textureLod(sampler2DArray(shadow_map, point_sampler),
+                      vec3(clamp(st, 0.0, 1.0), roundEven(spotRow(off, 24u).x)), 0.0).x;
+#else
+    return textureLod(sampler2D(shadow_map, point_sampler), clamp(st, 0.0, 1.0), 0.0).x;
+#endif
+}
+
+void main() {
+    const ivec2 pixel = ivec2(gl_GlobalInvocationID.xy);
+    if (any(notEqual(imageSize(atlas), ivec2(512))) || any(greaterThanEqual(pixel, ivec2(512)))) {
+        return;
+    }
+    const uint off = bitfieldExtract(push_data.buf_offsets0.x, 0, 8) >> 2u;
+    const vec2 uv = (vec2(pixel) + 0.5) / 512.0;
+    const vec4 projection = spotRow(off, 32u), source = spotRow(off, 0u), axis = spotRow(off, 4u);
+    const vec3 direction = normalize(vec3((uv - projection.zw) / projection.xy, 1.0));
+    const vec4 depthParams = spotRow(off, 28u);
+    const float rawDepth = textureLod(sampler2D(scene_depth, point_sampler), uv, 0.0).x;
+    const float z = clamp(depthParams.w / (rawDepth - depthParams.z), 0.0, 60000.0);
+    // The ray against the cone (cosine `outer` around the axis) and the light's range (source.w).
+    const float outer = spotRow(off, 16u).w;
+    const float dv = dot(direction, axis.xyz), ov = dot(source.xyz, axis.xyz);
+    const float od = dot(source.xyz, direction), oo = dot(source.xyz, source.xyz);
+    const float a = dv * dv - outer * outer, b = dv * ov - od * outer * outer;
+    const float c = ov * ov - oo * outer * outer;
+    float t0 = 0.0, t1 = 0.0;
+    const float discr = b * b - a * c, sphere = od * od - oo + source.w * source.w;
+    if (discr > 0.0 && abs(a) > 1e-7 && sphere > 0.0) {
+        float x = (b - sqrt(discr)) / a, y = (b + sqrt(discr)) / a;
+        const float cap = dv > 0.0 ? 10000.0 : 0.0;
+        if (x * dv < ov) {
+            x = cap;
+        }
+        if (y * dv < ov) {
+            y = cap;
+        }
+        t0 = max(0.0, max(min(x, y), od - sqrt(sphere)));
+        t1 = min(z / direction.z, min(max(x, y), od + sqrt(sphere)));
+    }
+    float sum = 0.0, weights = 0.0;
+    if (t1 > t0) {
+        const vec4 px = spotRow(off, 36u), py = spotRow(off, 40u), pw = spotRow(off, 44u);
+        const vec2 texel = 1.0 / vec2(textureSize(shadow_map, 0).xy);
+        const float phase = fract(0.5 + dot(vec2(pixel), vec2(0.754877666, 0.569840296)));
+        for (int i = 0; i < 96; ++i) {
+            const vec4 pt = vec4(direction * mix(t0, t1, (float(i) + phase) / 96.0), 1.0);
+            const vec3 fromLight = pt.xyz - source.xyz;
+            const float distance2 = dot(fromLight, fromLight);
+            const float forward = dot(axis.xyz, fromLight);
+            const float w = max(0.0, forward * inversesqrt(max(distance2, 1e-8)) - outer) /
+                            max(distance2, 0.04 * source.w * source.w);
+            const float clipW = dot(pw, pt);
+            if (clipW <= 0.0) {
+                continue;
+            }
+            const vec2 st = vec2(dot(px, pt), dot(py, pt)) / clipW;
+            const vec2 offset = fract((float(i) + phase) * vec2(0.618034, 0.414214)) - 0.5;
+            const float raw = shadowDepth(off, st + offset * texel);
+            const float blocker = depthParams.y / (raw - depthParams.x);
+            float lit = w * smoothstep(-0.035, 0.035, blocker - forward);
+#ifdef PROJECTOR
+            // The flashlight's pattern where the sample falls in its projection.
+            const vec3 pattern = textureLod(sampler2D(pattern_map, point_sampler),
+                                            clamp(st, 0.0, 1.0), 0.0).rgb;
+            lit *= dot(pattern, vec3(0.333));
+#endif
+            sum += lit;
+            weights += w;
+        }
+    }
+    imageStore(atlas, pixel, vec4(-2.0 - sum / max(weights, 1e-15), z, 0.0, 0.0));
+}

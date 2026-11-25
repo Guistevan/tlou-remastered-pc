@@ -59,7 +59,8 @@ def resolution_label(size):
     gcd = math.gcd(width, height)
     return f"{width}x{height} ({width // gcd}:{height // gcd})"
 DEFAULT_SWITCHES = {"motion_blur": False, "job_sleep": True, "profile": False, "background_shaders": True,
-                    "pro_shadows": True, "ambient_half": True, "quarter_depth": True, "low_vram": "auto"}
+                    "pro_shadows": True, "ambient_half": True, "quarter_depth": True, "low_vram": "auto",
+                    "volumetric_rays": False}
 # Video memory (GOW3_LOW_VRAM, gpu/shadps4/video_core/renderer_vulkan/vk_low_vram.h): auto turns the
 # low video memory mode on for cards of 3 GB or less; 2-3 GB forces it, 4 GB or more turns it off.
 LOW_VRAM = {"vram_auto": "auto", "vram_low": "on", "vram_normal": "off"}
@@ -1637,6 +1638,21 @@ DEPTH_TEXT = {
 }
 for _code, _value in DEPTH_TEXT.items():
     TEXTS[_code]["quarter_depth"] = _value
+# The sun's, moon's and spotlights' volumetric light from camera rays (GOW3_VOLUMETRIC_RAYS,
+# renderer_vulkan/vk_volumetric_light.h, #55).
+VOLUMETRIC_TEXT = {
+    "pt": "Feixes de luz sem degraus (luz volumétrica por raios)",
+    "en": "Light beams without steps (ray-traced volumetric light)",
+    "es": "Haces de luz sin escalones (luz volumétrica por rayos)",
+    "fr": "Rayons de lumière sans paliers (lumière volumétrique par rayons)",
+    "de": "Lichtstrahlen ohne Stufen (volumetrisches Licht per Strahlen)",
+    "it": "Fasci di luce senza gradini (luce volumetrica a raggi)",
+    "pl": "Snopy światła bez schodków (światło wolumetryczne z promieni)",
+    "ru": "Лучи света без ступенек (объёмный свет по лучам)",
+    "ja": "段差のない光の筋（レイによるボリュームライト）",
+}
+for _code, _value in VOLUMETRIC_TEXT.items():
+    TEXTS[_code]["volumetric_rays"] = _value
 # Video memory (LOW_VRAM): the label and its three choices.
 VRAM_TEXT = {
     "pt": ("Memória de vídeo", "Automático", "2-3 GB (modo econômico)", "4 GB ou mais"),
@@ -1664,6 +1680,7 @@ INFO_TEXT = {
         "profile": "Grava um perfil de desempenho para diagnóstico de problemas (cerca de 10% menos FPS). Deixe desligado para jogar.",
         "background_shaders": "Compila shaders novos em segundo plano: menos travadas, mas algum objeto pode aparecer um instante depois. Desligado: o jogo espera cada shader.",
         "pro_shadows": "Sombras do sol e das luzes em resolução maior, como no PS4 Pro: mais nítidas e um pouco mais pesadas.",
+        "volumetric_rays": "Calcula a luz volumétrica do sol, da lua, dos holofotes e das lanternas por raios da câmera, em vez das linhas do jogo: sem degraus nos feixes, sem halo em volta dos personagens e sem retângulos nas aberturas. Não é o visual do PS4 e custa um pouco mais de GPU.",
         "vram": "Para placas de vídeo de 2 ou 3 GB. Usa menos memória de vídeo: reservas menores, texturas antigas descartadas mais cedo e, quando a placa enche, dados vão para a memória do sistema em vez de fechar o jogo. Automático liga sozinho em placas de até 3 GB. Escolher 2-3 GB também desmarca as sombras do PS4 Pro. Combine com 1280x720 ou 1600x900 (ou um upscaler). Também carrega os shaders salvos só quando o jogo precisa deles, em vez de todos ao abrir: usa muito menos RAM.",
     },
     "en": {
@@ -1677,6 +1694,7 @@ INFO_TEXT = {
         "profile": "Records a performance profile to diagnose problems (about 10% fewer FPS). Keep it off to play.",
         "background_shaders": "Compiles new shaders in the background: fewer stutters, but an object may appear a moment late. Off: the game waits for each shader.",
         "pro_shadows": "Sun and light shadows at a higher resolution, as on a PS4 Pro: sharper and a little heavier.",
+        "volumetric_rays": "Computes the sun's, moon's, spotlights' and flashlights' volumetric light from camera rays instead of the game's lines: no steps in the beams, no halo around characters and no boxes at openings. Not the PS4's look, and it costs a little more GPU time.",
         "vram": "For 2 or 3 GB graphics cards. Uses less video memory: smaller reserves, old textures dropped sooner and, when the card is full, data goes to system memory instead of closing the game. Automatic turns it on by itself on cards of up to 3 GB. Choosing 2-3 GB also unticks PS4 Pro shadows. Pair it with 1280x720 or 1600x900 (or an upscaler). It also loads saved shaders only when the game needs them instead of all of them at start: much less RAM.",
     },
     "es": {
@@ -1690,6 +1708,7 @@ INFO_TEXT = {
         "profile": "Graba un perfil de rendimiento para diagnosticar problemas (alrededor de un 10% menos de FPS). Déjalo desactivado para jugar.",
         "background_shaders": "Compila los shaders nuevos en segundo plano: menos tirones, pero un objeto puede aparecer un instante después. Desactivado: el juego espera cada shader.",
         "pro_shadows": "Sombras del sol y de las luces a mayor resolución, como en PS4 Pro: más nítidas y algo más exigentes.",
+        "volumetric_rays": "Calcula la luz volumétrica del sol, la luna, los focos y las linternas con rayos de cámara en lugar de las líneas del juego: sin escalones en los haces, sin halo alrededor de los personajes ni rectángulos en las aberturas. No es el aspecto de PS4 y cuesta algo más de GPU.",
         "vram": "Para tarjetas gráficas de 2 o 3 GB. Usa menos memoria de vídeo: reservas más pequeñas, texturas viejas descartadas antes y, cuando la tarjeta se llena, los datos van a la memoria del sistema en lugar de cerrar el juego. Automático lo activa solo en tarjetas de hasta 3 GB. Elegir 2-3 GB también desmarca las sombras de PS4 Pro. Combínalo con 1280x720 o 1600x900 (o un upscaler). También carga los shaders guardados solo cuando el juego los necesita, en lugar de todos al iniciar: mucha menos RAM.",
     },
     "fr": {
@@ -1703,6 +1722,7 @@ INFO_TEXT = {
         "profile": "Enregistre un profil de performances pour diagnostiquer un problème (environ 10 % de FPS en moins). Laissez-le désactivé pour jouer.",
         "background_shaders": "Compile les nouveaux shaders en arrière-plan : moins de saccades, mais un objet peut apparaître un instant plus tard. Désactivé : le jeu attend chaque shader.",
         "pro_shadows": "Ombres du soleil et des lumières en plus haute résolution, comme sur PS4 Pro : plus nettes et un peu plus gourmandes.",
+        "volumetric_rays": "Calcule la lumière volumétrique du soleil, de la lune, des projecteurs et des lampes torches par des rayons de caméra au lieu des lignes du jeu : sans paliers dans les rayons, sans halo autour des personnages ni rectangles aux ouvertures. Ce n'est pas le rendu PS4 et cela coûte un peu plus de GPU.",
         "vram": "Pour les cartes graphiques de 2 ou 3 Go. Utilise moins de mémoire vidéo : réserves plus petites, anciennes textures libérées plus tôt et, quand la carte est pleine, les données vont en mémoire système au lieu de fermer le jeu. Automatique l'active tout seul sur les cartes jusqu'à 3 Go. Choisir 2-3 Go décoche aussi les ombres PS4 Pro. À combiner avec 1280x720 ou 1600x900 (ou un upscaler). Il charge aussi les shaders enregistrés seulement quand le jeu en a besoin, au lieu de tous au démarrage : beaucoup moins de RAM.",
     },
     "de": {
@@ -1716,6 +1736,7 @@ INFO_TEXT = {
         "profile": "Zeichnet ein Leistungsprofil zur Fehlersuche auf (etwa 10 % weniger FPS). Zum Spielen ausgeschaltet lassen.",
         "background_shaders": "Kompiliert neue Shader im Hintergrund: weniger Ruckler, aber ein Objekt kann einen Moment später erscheinen. Aus: Das Spiel wartet auf jeden Shader.",
         "pro_shadows": "Sonnen- und Lichtschatten in höherer Auflösung wie auf der PS4 Pro: schärfer und etwas anspruchsvoller.",
+        "volumetric_rays": "Berechnet das volumetrische Licht von Sonne, Mond, Scheinwerfern und Taschenlampen mit Kamerastrahlen statt mit den Linien des Spiels: keine Stufen in den Strahlen, kein Halo um Figuren, keine Rechtecke an Öffnungen. Nicht der PS4-Look und etwas mehr GPU-Last.",
         "vram": "Für Grafikkarten mit 2 oder 3 GB. Verbraucht weniger Videospeicher: kleinere Reserven, alte Texturen werden früher verworfen, und wenn die Karte voll ist, landen Daten im Systemspeicher, statt das Spiel zu beenden. Automatisch schaltet ihn bei Karten bis 3 GB selbst ein. 2-3 GB entfernt auch das Häkchen bei den PS4-Pro-Schatten. Am besten mit 1280x720 oder 1600x900 (oder einem Upscaler). Gespeicherte Shader werden außerdem erst geladen, wenn das Spiel sie braucht, statt alle beim Start: viel weniger RAM.",
     },
     "it": {
@@ -1729,6 +1750,7 @@ INFO_TEXT = {
         "profile": "Registra un profilo delle prestazioni per diagnosticare problemi (circa il 10% di FPS in meno). Lascialo disattivato per giocare.",
         "background_shaders": "Compila i nuovi shader in background: meno scatti, ma un oggetto può comparire un istante dopo. Disattivato: il gioco attende ogni shader.",
         "pro_shadows": "Ombre del sole e delle luci a risoluzione più alta, come su PS4 Pro: più nitide e un po' più pesanti.",
+        "volumetric_rays": "Calcola la luce volumetrica di sole, luna, fari e torce con raggi dalla telecamera invece che con le linee del gioco: niente gradini nei fasci, niente alone attorno ai personaggi né rettangoli nelle aperture. Non è l'aspetto PS4 e costa un po' più di GPU.",
         "vram": "Per schede video da 2 o 3 GB. Usa meno memoria video: riserve più piccole, texture vecchie scartate prima e, quando la scheda è piena, i dati vanno nella memoria di sistema invece di chiudere il gioco. Automatico la attiva da solo sulle schede fino a 3 GB. Scegliere 2-3 GB toglie anche la spunta alle ombre PS4 Pro. Abbinala a 1280x720 o 1600x900 (o a un upscaler). Carica inoltre gli shader salvati solo quando servono al gioco, invece di tutti all'avvio: molta meno RAM.",
     },
     "pl": {
@@ -1742,6 +1764,7 @@ INFO_TEXT = {
         "profile": "Zapisuje profil wydajności do diagnozowania problemów (około 10% mniej FPS). Do gry zostaw wyłączone.",
         "background_shaders": "Kompiluje nowe shadery w tle: mniej przycięć, ale obiekt może pojawić się chwilę później. Wyłączone: gra czeka na każdy shader.",
         "pro_shadows": "Cienie od słońca i świateł w wyższej rozdzielczości, jak na PS4 Pro: ostrzejsze i nieco bardziej wymagające.",
+        "volumetric_rays": "Liczy światło wolumetryczne słońca, księżyca, reflektorów i latarek promieniami z kamery zamiast liniami gry: bez schodków w snopach, bez poświaty wokół postaci i prostokątów w otworach. To nie wygląd z PS4 i kosztuje trochę więcej GPU.",
         "vram": "Dla kart graficznych z 2 lub 3 GB. Zużywa mniej pamięci wideo: mniejsze rezerwy, stare tekstury zwalniane wcześniej, a gdy karta jest pełna, dane trafiają do pamięci systemowej zamiast zamykać grę. Automatycznie włącza się sam na kartach do 3 GB. Wybór 2-3 GB odznacza też cienie z PS4 Pro. Łącz z 1280x720 lub 1600x900 (albo upscalerem). Wczytuje też zapisane shadery dopiero, gdy gra ich potrzebuje, zamiast wszystkich przy starcie: dużo mniej RAM.",
     },
     "ru": {
@@ -1755,6 +1778,7 @@ INFO_TEXT = {
         "profile": "Записывает профиль производительности для поиска проблем (примерно на 10% меньше FPS). Для игры оставьте выключенным.",
         "background_shaders": "Компилирует новые шейдеры в фоне: меньше подтормаживаний, но объект может появиться с небольшой задержкой. Выкл.: игра ждёт каждый шейдер.",
         "pro_shadows": "Тени от солнца и источников света в более высоком разрешении, как на PS4 Pro: чётче и немного тяжелее.",
+        "volumetric_rays": "Считает объёмный свет солнца, луны, прожекторов и фонарей лучами из камеры вместо линий игры: без ступенек в лучах, без ореола вокруг персонажей и прямоугольников в проёмах. Это не вид PS4, и нагрузка на GPU немного выше.",
         "vram": "Для видеокарт с 2 или 3 ГБ. Расходует меньше видеопамяти: меньшие резервы, старые текстуры выгружаются раньше, а когда память карты заполнена, данные уходят в системную память вместо закрытия игры. «Автоматически» включает режим сам на картах до 3 ГБ. Выбор 2-3 ГБ также снимает флажок теней PS4 Pro. Сочетайте с 1280x720 или 1600x900 (или с апскейлером). Также загружает сохранённые шейдеры только когда они нужны игре, а не все при запуске: намного меньше ОЗУ.",
     },
     "ja": {
@@ -1768,6 +1792,7 @@ INFO_TEXT = {
         "profile": "問題の診断用にパフォーマンスプロファイルを記録します（FPSが約10%低下）。プレイするときはオフにしてください。",
         "background_shaders": "新しいシェーダーをバックグラウンドでコンパイルします：カクつきは減りますが、オブジェクトの表示が少し遅れることがあります。オフ：ゲームが各シェーダーを待ちます。",
         "pro_shadows": "太陽や照明の影をPS4 Proと同じく高い解像度で描画します：よりシャープになり、少し重くなります。",
+        "volumetric_rays": "太陽・月・投光器・懐中電灯のボリュームライトを、ゲームのラインではなくカメラからのレイで計算します：光の筋の段差、キャラクターの周りのハロー、開口部の四角形がなくなります。PS4の見た目とは異なり、GPU負荷が少し増えます。",
         "vram": "2〜3 GBのグラフィックカード向けです。ビデオメモリの使用量を減らします：予約領域を小さくし、古いテクスチャを早めに解放し、カードがいっぱいになったらゲームを終了せずにデータをシステムメモリに置きます。「自動」は3 GB以下のカードで自動的にオンになります。2〜3 GBを選ぶとPS4 Proの影のチェックも外れます。1280x720か1600x900（またはアップスケーラー）と組み合わせてください。また、保存済みのシェーダーを起動時にすべてではなく、ゲームが必要としたときに読み込みます：RAMの使用量が大きく減ります。",
     },
 }
@@ -2315,6 +2340,7 @@ def game_env(switches, base=None, overrides=None, folders=None):
     env["TLOU_PRO_SHADOWS"] = "1" if switches["pro_shadows"] else "0"
     env["TLOU_AMBIENT_SHADOWS"] = "half" if switches.get("ambient_half", True) else "quarter"
     env["GOW3_QUARTER_DEPTH"] = "1" if switches.get("quarter_depth", True) else "0"
+    env["GOW3_VOLUMETRIC_RAYS"] = "1" if switches.get("volumetric_rays", False) else "0"
     env["GOW3_LOW_VRAM"] = {"on": "1", "off": "0"}.get(switches.get("low_vram", "auto"), "auto")
     if switches["background_shaders"]:
         # Draws are skipped while their pipeline compiles: it pauses less. It flashed white and
@@ -2883,7 +2909,7 @@ class PadView:
 
 
 class Launcher(tk.Tk):
-    WIDTH, HEIGHT = 1180, 690   # 690: room for Video memory (14 Nov 2026)
+    WIDTH, HEIGHT = 1180, 716   # 716: room for Video memory (14 Nov) and the light beams (24 Nov 2026)
 
     def __init__(self, seconds=0):
         # Its own taskbar entry and icon, not those of pythonw.exe.
@@ -3008,11 +3034,14 @@ class Launcher(tk.Tk):
         self.profile = self.check(panel, row + 2, self.t("profile"), switches["profile"])
         self.background_shaders = self.check(panel, row + 3, self.t("background_shaders"), switches["background_shaders"])
         self.pro_shadows = self.check(panel, row + 4, self.t("pro_shadows"), switches["pro_shadows"])
+        self.volumetric_rays = self.check(panel, row + 5, self.t("volumetric_rays"),
+                                          switches.get("volumetric_rays", False))
         self.info(panel, row, "motion_blur")
         self.info(panel, row + 1, "job_sleep")
         self.info(panel, row + 2, "profile")
         self.info(panel, row + 3, "background_shaders")
         self.info(panel, row + 4, "pro_shadows")
+        self.info(panel, row + 5, "volumetric_rays")
 
         self.play_button = tk.Button(self, text=self.t("play"), command=self.play, bg=ACCENT, fg=BG,
                                      activebackground=ACCENT_HOT, activeforeground=BG, bd=0, relief="flat",
@@ -3131,7 +3160,8 @@ class Launcher(tk.Tk):
         return {"motion_blur": self.motion_blur.get(), "job_sleep": self.job_sleep.get(), "profile": self.profile.get(),
                 "background_shaders": self.background_shaders.get(), "pro_shadows": self.pro_shadows.get(),
                 "ambient_half": self.ambient_half.get(), "quarter_depth": self.quarter_depth.get(),
-                "low_vram": self.vram_labels.get(self.low_vram.get(), "auto")}
+                "low_vram": self.vram_labels.get(self.low_vram.get(), "auto"),
+                "volumetric_rays": self.volumetric_rays.get()}
 
     def change_vram(self):
         """Video memory: 2-3 GB also unticks the PS4 Pro's larger shadow maps."""

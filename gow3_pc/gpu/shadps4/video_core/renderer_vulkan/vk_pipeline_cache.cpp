@@ -38,6 +38,7 @@
 #include "video_core/renderer_vulkan/vk_pipeline_serialization.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
+#include "video_core/renderer_vulkan/vk_volumetric_light.h"
 
 extern thread_local bool gow3_assert_throws; // shim/common/assert.cpp
 
@@ -855,8 +856,10 @@ bool PipelineCache::QueueShader(Program& program, HwStage stage, SwStage l_stage
         DumpShader(spv, build->info.pgm_hash, build->info.hw_stage, build->permutation, "spv");
         auto patch = GetShaderPatch(build->info.pgm_hash, build->info.hw_stage,
                                     build->permutation, "spv");
-        build->module = CompileSPV(patch && EmulatorSettings.IsPatchShaders() ? *patch : spv,
-                                    instance.GetDevice());
+        build->module = CompileSPV(patch && EmulatorSettings.IsPatchShaders()
+                                       ? std::span<const u32>{*patch}
+                                       : VolumetricLight::ModuleCode(build->info, spv),
+                                   instance.GetDevice());
         build->binary = std::move(spv);
         build->ir.reset();
         compiler_pools.Recycle(std::move(build->pools));
@@ -1213,7 +1216,8 @@ void PipelineCache::RunPrecompile(PrecompiledCompute& job) {
     auto spv = Shader::Backend::SPIRV::EmitSPIRV(profile, runtime_info, *job.ir, binding);
     job.ir.reset();
     compiler_pools.Recycle(std::move(job.pools));
-    const auto module = CompileSPV(spv, instance.GetDevice());
+    const auto module =
+        CompileSPV(VolumetricLight::ModuleCode(job.program->info, spv), instance.GetDevice());
     job.spirv = std::move(spv);
     job.program->AddPermut(module, std::move(*job.spec));
     job.spec.reset();
@@ -2190,7 +2194,7 @@ vk::ShaderModule PipelineCache::CompileModule(Shader::Info& info, Shader::Runtim
         LOG_INFO(Loader, "Loaded patch for {} shader {:#x}", info.hw_stage, info.pgm_hash);
         module = CompileSPV(*patch, instance.GetDevice());
     } else {
-        module = CompileSPV(spv, instance.GetDevice());
+        module = CompileSPV(VolumetricLight::ModuleCode(info, spv), instance.GetDevice());
     }
 
     RegisterShaderBinary(std::move(spv), info.pgm_hash, perm_idx);

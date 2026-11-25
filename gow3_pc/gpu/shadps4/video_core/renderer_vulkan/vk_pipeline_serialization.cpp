@@ -32,6 +32,7 @@
 #include "video_core/renderer_vulkan/vk_instance.h"
 #include "video_core/renderer_vulkan/vk_pipeline_cache.h"
 #include "video_core/renderer_vulkan/vk_shader_util.h"
+#include "video_core/renderer_vulkan/vk_volumetric_light.h"
 #include "video_core/renderer_vulkan/vk_warmup_inbox.h"
 
 namespace Serialization {
@@ -1308,7 +1309,7 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
 
     auto [it_pgm, new_program] = program_cache.try_emplace(program->info.pgm_hash);
     if (new_program) {
-        module = CompileSPV(spv, instance.GetDevice());
+        module = CompileSPV(VolumetricLight::ModuleCode(program->info, spv), instance.GetDevice());
         it_pgm.value() = std::move(program);
     } else {
         const auto& it = std::ranges::find(it_pgm.value()->modules, spec, &Program::Module::spec);
@@ -1326,7 +1327,8 @@ bool PipelineCache::LoadPipelineStage(Serialization::Archive& ar, size_t stage) 
             }
             module = it->module;
         } else {
-            module = CompileSPV(spv, instance.GetDevice());
+            module = CompileSPV(VolumetricLight::ModuleCode(it_pgm.value()->info, spv),
+                                instance.GetDevice());
         }
     }
     it_pgm.value()->InsertPermut(module, std::move(spec), perm_idx);
@@ -1768,7 +1770,8 @@ void PipelineCache::ReadWarmEntry(BackgroundWarmup& warm, std::vector<u8>&& data
                                           stage->perm_idx) &&
                         !StaleRenderSize(stage->program->info, spv)) {
                         const auto module_started = std::chrono::steady_clock::now();
-                        stage->module = CompileSPV(spv, stage->device);
+                        stage->module = CompileSPV(
+                            VolumetricLight::ModuleCode(stage->program->info, spv), stage->device);
                         module_time = ElapsedNs(module_started);
                         warm.module_ns += module_time;
                         ++warm.modules;

@@ -41,6 +41,7 @@
 #include "video_core/renderer_vulkan/vk_runtime.h"
 #include "video_core/renderer_vulkan/vk_scheduler.h"
 #include "video_core/renderer_vulkan/vk_shader_hle.h"
+#include "video_core/renderer_vulkan/vk_volumetric_light.h"
 #include "video_core/renderer_vulkan/tlou_auto_readback.h"
 #include "video_core/texture_cache/image_view.h"
 #include "video_core/texture_cache/texture_cache.h"
@@ -3495,6 +3496,14 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
                        serial_before_bind == bound_compute_serial &&
                        scheduler.RecordSerial() == serial_after_bind &&
                        !scheduler.IsRecordingThreaded() && !UseDrawPipe();
+    // gow3 24 Nov 2026 (#55, GOW3_VOLUMETRIC_RAYS=1, vk_volumetric_light.h): the volumetric
+    // lights' line samplers are followed by the camera-ray grid, written over their lines with
+    // their layout, descriptors and push constants (still bound: the layout is the same).
+    const int grid_variant = VolumetricLight::GridVariant(cs);
+    const vk::Pipeline grid =
+        grid_variant >= 0 ? VolumetricLight::GridPipeline(instance.GetDevice(),
+                                                          pipeline->GetLayout(), grid_variant)
+                          : vk::Pipeline{};
     scheduler.Record([=](vk::CommandBuffer cmdbuf) {
         if (full_barrier) {
             RecordFullBarrier(cmdbuf);
@@ -3503,11 +3512,24 @@ void Rasterizer::DispatchRecord(const ComputePipeline* pipeline) {
             cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, handle);
         }
         cmdbuf.dispatch(dim_x, dim_y, dim_z);
+        if (grid) {
+            const vk::MemoryBarrier2 after_lines{
+                .srcStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .srcAccessMask = vk::AccessFlagBits2::eShaderWrite,
+                .dstStageMask = vk::PipelineStageFlagBits2::eComputeShader,
+                .dstAccessMask = vk::AccessFlagBits2::eShaderRead | vk::AccessFlagBits2::eShaderWrite,
+            };
+            cmdbuf.pipelineBarrier2(vk::DependencyInfo{.memoryBarrierCount = 1,
+                                                       .pMemoryBarriers = &after_lines});
+            cmdbuf.bindPipeline(vk::PipelineBindPoint::eCompute, grid);
+            cmdbuf.dispatch(VolumetricLight::GridGroups, VolumetricLight::GridGroups, 1);
+        }
         if (full_barrier) {
             RecordFullBarrier(cmdbuf);
         }
     });
-    bound_compute_pipeline = handle;
+    // After the grid, the next dispatch binds its own pipeline again.
+    bound_compute_pipeline = grid ? grid : handle;
     bound_compute_serial = scheduler.RecordSerial();
     for (const auto& peek : cloth_peeks) {
         if (peek.written) {
