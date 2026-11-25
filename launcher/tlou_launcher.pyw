@@ -1667,6 +1667,22 @@ VRAM_TEXT = {
 }
 for _code, (_label, _auto, _low, _normal) in VRAM_TEXT.items():
     TEXTS[_code].update({"vram": _label, "vram_auto": _auto, "vram_low": _low, "vram_normal": _normal})
+# Anisotropic filtering (gow3.ini anisotropic_filter, also in the game's PC SETTINGS): the label and
+# its Off choice (the game's own filtering); the levels are 2x-16x in every language.
+ANISO_TEXT = {
+    "pt": ("Filtragem anisotrópica", "Padrão do jogo"),
+    "en": ("Anisotropic filtering", "Off (the game's own)"),
+    "es": ("Filtrado anisotrópico", "Desactivado (del juego)"),
+    "fr": ("Filtrage anisotrope", "Désactivé (celui du jeu)"),
+    "de": ("Anisotrope Filterung", "Aus (Spielstandard)"),
+    "it": ("Filtraggio anisotropico", "Disattivato (del gioco)"),
+    "pl": ("Filtrowanie anizotropowe", "Wyłączone (gry)"),
+    "ru": ("Анизотропная фильтрация", "Выкл. (как в игре)"),
+    "ja": ("異方性フィルタリング", "オフ（ゲーム標準）"),
+}
+for _code, (_label, _off) in ANISO_TEXT.items():
+    TEXTS[_code].update({"aniso": _label, "aniso_off": _off})
+ANISO_LEVELS = ("2", "4", "8", "16")
 # What each option of the main screen does, shown by its (i) icon (English for a missing text).
 INFO_TEXT = {
     "pt": {
@@ -1682,6 +1698,7 @@ INFO_TEXT = {
         "pro_shadows": "Sombras do sol e das luzes em resolução maior, como no PS4 Pro: mais nítidas e um pouco mais pesadas.",
         "volumetric_rays": "Calcula a luz volumétrica do sol, da lua, dos holofotes e das lanternas por raios da câmera, em vez das linhas do jogo: sem degraus nos feixes, sem halo em volta dos personagens e sem retângulos nas aberturas. Não é o visual do PS4 e custa um pouco mais de GPU.",
         "vram": "Para placas de vídeo de 2 ou 3 GB. Usa menos memória de vídeo: reservas menores, texturas antigas descartadas mais cedo e, quando a placa enche, dados vão para a memória do sistema em vez de fechar o jogo. Automático liga sozinho em placas de até 3 GB. Escolher 2-3 GB também desmarca as sombras do PS4 Pro. Combine com 1280x720 ou 1600x900 (ou um upscaler). Também carrega os shaders salvos só quando o jogo precisa deles, em vez de todos ao abrir: usa muito menos RAM.",
+        "aniso": "Mantém as texturas nítidas em superfícies vistas de lado, como chão, estradas e paredes. Padrão do jogo: a filtragem do próprio jogo. 16x é a mais nítida e custa pouco de GPU na maioria das placas. Também dá para mudar durante o jogo em Opções > CONFIGURAÇÕES DE PC.",
     },
     "en": {
         "upscaler": "Draws the scene smaller and scales it to the screen (FSR 3, DLSS on NVIDIA RTX cards, XeSS, or TAA). Off: native size.",
@@ -1696,6 +1713,7 @@ INFO_TEXT = {
         "pro_shadows": "Sun and light shadows at a higher resolution, as on a PS4 Pro: sharper and a little heavier.",
         "volumetric_rays": "Computes the sun's, moon's, spotlights' and flashlights' volumetric light from camera rays instead of the game's lines: no steps in the beams, no halo around characters and no boxes at openings. Not the PS4's look, and it costs a little more GPU time.",
         "vram": "For 2 or 3 GB graphics cards. Uses less video memory: smaller reserves, old textures dropped sooner and, when the card is full, data goes to system memory instead of closing the game. Automatic turns it on by itself on cards of up to 3 GB. Choosing 2-3 GB also unticks PS4 Pro shadows. Pair it with 1280x720 or 1600x900 (or an upscaler). It also loads saved shaders only when the game needs them instead of all of them at start: much less RAM.",
+        "aniso": "Keeps textures sharp on surfaces seen at an angle, such as floors, roads and walls. Off: the game's own filtering. 16x is the sharpest and costs little GPU time on most cards. It can also be changed during play in Options > PC SETTINGS.",
     },
     "es": {
         "upscaler": "Dibuja la escena más pequeña y la amplía a la pantalla (FSR 3, DLSS en tarjetas NVIDIA RTX, XeSS o TAA). Desactivado: tamaño nativo.",
@@ -1710,6 +1728,7 @@ INFO_TEXT = {
         "pro_shadows": "Sombras del sol y de las luces a mayor resolución, como en PS4 Pro: más nítidas y algo más exigentes.",
         "volumetric_rays": "Calcula la luz volumétrica del sol, la luna, los focos y las linternas con rayos de cámara en lugar de las líneas del juego: sin escalones en los haces, sin halo alrededor de los personajes ni rectángulos en las aberturas. No es el aspecto de PS4 y cuesta algo más de GPU.",
         "vram": "Para tarjetas gráficas de 2 o 3 GB. Usa menos memoria de vídeo: reservas más pequeñas, texturas viejas descartadas antes y, cuando la tarjeta se llena, los datos van a la memoria del sistema en lugar de cerrar el juego. Automático lo activa solo en tarjetas de hasta 3 GB. Elegir 2-3 GB también desmarca las sombras de PS4 Pro. Combínalo con 1280x720 o 1600x900 (o un upscaler). También carga los shaders guardados solo cuando el juego los necesita, en lugar de todos al iniciar: mucha menos RAM.",
+        "aniso": "Mantiene nítidas las texturas en superficies vistas en ángulo, como suelos, carreteras y paredes. Desactivado: el filtrado propio del juego. 16x es la más nítida y consume poca GPU en la mayoría de las tarjetas. También se puede cambiar durante la partida en Opciones > AJUSTES DE PC.",
     },
     "fr": {
         "upscaler": "Dessine la scène plus petite puis l'agrandit à l'écran (FSR 3, DLSS sur les cartes NVIDIA RTX, XeSS ou TAA). Désactivé : taille native.",
@@ -1724,6 +1743,7 @@ INFO_TEXT = {
         "pro_shadows": "Ombres du soleil et des lumières en plus haute résolution, comme sur PS4 Pro : plus nettes et un peu plus gourmandes.",
         "volumetric_rays": "Calcule la lumière volumétrique du soleil, de la lune, des projecteurs et des lampes torches par des rayons de caméra au lieu des lignes du jeu : sans paliers dans les rayons, sans halo autour des personnages ni rectangles aux ouvertures. Ce n'est pas le rendu PS4 et cela coûte un peu plus de GPU.",
         "vram": "Pour les cartes graphiques de 2 ou 3 Go. Utilise moins de mémoire vidéo : réserves plus petites, anciennes textures libérées plus tôt et, quand la carte est pleine, les données vont en mémoire système au lieu de fermer le jeu. Automatique l'active tout seul sur les cartes jusqu'à 3 Go. Choisir 2-3 Go décoche aussi les ombres PS4 Pro. À combiner avec 1280x720 ou 1600x900 (ou un upscaler). Il charge aussi les shaders enregistrés seulement quand le jeu en a besoin, au lieu de tous au démarrage : beaucoup moins de RAM.",
+        "aniso": "Garde les textures nettes sur les surfaces vues en biais, comme les sols, les routes et les murs. Désactivé : le filtrage du jeu. 16x est la plus nette et coûte peu de GPU sur la plupart des cartes. Modifiable aussi en jeu dans Options > PARAMÈTRES PC.",
     },
     "de": {
         "upscaler": "Zeichnet die Szene kleiner und skaliert sie auf den Bildschirm (FSR 3, DLSS auf NVIDIA-RTX-Karten, XeSS oder TAA). Aus: native Größe.",
@@ -1738,6 +1758,7 @@ INFO_TEXT = {
         "pro_shadows": "Sonnen- und Lichtschatten in höherer Auflösung wie auf der PS4 Pro: schärfer und etwas anspruchsvoller.",
         "volumetric_rays": "Berechnet das volumetrische Licht von Sonne, Mond, Scheinwerfern und Taschenlampen mit Kamerastrahlen statt mit den Linien des Spiels: keine Stufen in den Strahlen, kein Halo um Figuren, keine Rechtecke an Öffnungen. Nicht der PS4-Look und etwas mehr GPU-Last.",
         "vram": "Für Grafikkarten mit 2 oder 3 GB. Verbraucht weniger Videospeicher: kleinere Reserven, alte Texturen werden früher verworfen, und wenn die Karte voll ist, landen Daten im Systemspeicher, statt das Spiel zu beenden. Automatisch schaltet ihn bei Karten bis 3 GB selbst ein. 2-3 GB entfernt auch das Häkchen bei den PS4-Pro-Schatten. Am besten mit 1280x720 oder 1600x900 (oder einem Upscaler). Gespeicherte Shader werden außerdem erst geladen, wenn das Spiel sie braucht, statt alle beim Start: viel weniger RAM.",
+        "aniso": "Hält Texturen auf schräg gesehenen Flächen scharf, etwa auf Böden, Straßen und Wänden. Aus: die eigene Filterung des Spiels. 16x ist am schärfsten und kostet auf den meisten Karten wenig GPU-Leistung. Auch während des Spiels änderbar unter Optionen > PC-EINSTELLUNGEN.",
     },
     "it": {
         "upscaler": "Disegna la scena più piccola e la ingrandisce sullo schermo (FSR 3, DLSS sulle schede NVIDIA RTX, XeSS o TAA). Disattivato: dimensione nativa.",
@@ -1752,6 +1773,7 @@ INFO_TEXT = {
         "pro_shadows": "Ombre del sole e delle luci a risoluzione più alta, come su PS4 Pro: più nitide e un po' più pesanti.",
         "volumetric_rays": "Calcola la luce volumetrica di sole, luna, fari e torce con raggi dalla telecamera invece che con le linee del gioco: niente gradini nei fasci, niente alone attorno ai personaggi né rettangoli nelle aperture. Non è l'aspetto PS4 e costa un po' più di GPU.",
         "vram": "Per schede video da 2 o 3 GB. Usa meno memoria video: riserve più piccole, texture vecchie scartate prima e, quando la scheda è piena, i dati vanno nella memoria di sistema invece di chiudere il gioco. Automatico la attiva da solo sulle schede fino a 3 GB. Scegliere 2-3 GB toglie anche la spunta alle ombre PS4 Pro. Abbinala a 1280x720 o 1600x900 (o a un upscaler). Carica inoltre gli shader salvati solo quando servono al gioco, invece di tutti all'avvio: molta meno RAM.",
+        "aniso": "Mantiene nitide le texture su superfici viste di sbieco, come pavimenti, strade e muri. Disattivato: il filtraggio del gioco. 16x è la più nitida e costa poca GPU sulla maggior parte delle schede. Si può cambiare anche durante il gioco in Opzioni > IMPOSTAZIONI PC.",
     },
     "pl": {
         "upscaler": "Rysuje scenę w mniejszym rozmiarze i skaluje ją do ekranu (FSR 3, DLSS na kartach NVIDIA RTX, XeSS lub TAA). Wyłączone: rozmiar natywny.",
@@ -1766,6 +1788,7 @@ INFO_TEXT = {
         "pro_shadows": "Cienie od słońca i świateł w wyższej rozdzielczości, jak na PS4 Pro: ostrzejsze i nieco bardziej wymagające.",
         "volumetric_rays": "Liczy światło wolumetryczne słońca, księżyca, reflektorów i latarek promieniami z kamery zamiast liniami gry: bez schodków w snopach, bez poświaty wokół postaci i prostokątów w otworach. To nie wygląd z PS4 i kosztuje trochę więcej GPU.",
         "vram": "Dla kart graficznych z 2 lub 3 GB. Zużywa mniej pamięci wideo: mniejsze rezerwy, stare tekstury zwalniane wcześniej, a gdy karta jest pełna, dane trafiają do pamięci systemowej zamiast zamykać grę. Automatycznie włącza się sam na kartach do 3 GB. Wybór 2-3 GB odznacza też cienie z PS4 Pro. Łącz z 1280x720 lub 1600x900 (albo upscalerem). Wczytuje też zapisane shadery dopiero, gdy gra ich potrzebuje, zamiast wszystkich przy starcie: dużo mniej RAM.",
+        "aniso": "Utrzymuje ostre tekstury na powierzchniach widzianych pod kątem, np. podłogach, drogach i ścianach. Wyłączone: własne filtrowanie gry. 16x jest najostrzejsze i zużywa mało GPU na większości kart. Można to zmienić także w trakcie gry w Opcje > USTAWIENIA PC.",
     },
     "ru": {
         "upscaler": "Рисует сцену в меньшем размере и масштабирует её до экрана (FSR 3, DLSS на картах NVIDIA RTX, XeSS или TAA). Выкл.: родной размер.",
@@ -1780,6 +1803,7 @@ INFO_TEXT = {
         "pro_shadows": "Тени от солнца и источников света в более высоком разрешении, как на PS4 Pro: чётче и немного тяжелее.",
         "volumetric_rays": "Считает объёмный свет солнца, луны, прожекторов и фонарей лучами из камеры вместо линий игры: без ступенек в лучах, без ореола вокруг персонажей и прямоугольников в проёмах. Это не вид PS4, и нагрузка на GPU немного выше.",
         "vram": "Для видеокарт с 2 или 3 ГБ. Расходует меньше видеопамяти: меньшие резервы, старые текстуры выгружаются раньше, а когда память карты заполнена, данные уходят в системную память вместо закрытия игры. «Автоматически» включает режим сам на картах до 3 ГБ. Выбор 2-3 ГБ также снимает флажок теней PS4 Pro. Сочетайте с 1280x720 или 1600x900 (или с апскейлером). Также загружает сохранённые шейдеры только когда они нужны игре, а не все при запуске: намного меньше ОЗУ.",
+        "aniso": "Делает текстуры четкими на поверхностях, которые видны под углом, например на полу, дорогах и стенах. Выкл.: фильтрация самой игры. 16x — самая четкая, и на большинстве видеокарт почти не нагружает GPU. Можно изменить и во время игры: Настройки > НАСТРОЙКИ ПК.",
     },
     "ja": {
         "upscaler": "シーンを小さく描画して画面サイズに拡大します（FSR 3、NVIDIA RTXカードのDLSS、XeSS、またはTAA）。オフ：ネイティブサイズ。",
@@ -1794,6 +1818,7 @@ INFO_TEXT = {
         "pro_shadows": "太陽や照明の影をPS4 Proと同じく高い解像度で描画します：よりシャープになり、少し重くなります。",
         "volumetric_rays": "太陽・月・投光器・懐中電灯のボリュームライトを、ゲームのラインではなくカメラからのレイで計算します：光の筋の段差、キャラクターの周りのハロー、開口部の四角形がなくなります。PS4の見た目とは異なり、GPU負荷が少し増えます。",
         "vram": "2〜3 GBのグラフィックカード向けです。ビデオメモリの使用量を減らします：予約領域を小さくし、古いテクスチャを早めに解放し、カードがいっぱいになったらゲームを終了せずにデータをシステムメモリに置きます。「自動」は3 GB以下のカードで自動的にオンになります。2〜3 GBを選ぶとPS4 Proの影のチェックも外れます。1280x720か1600x900（またはアップスケーラー）と組み合わせてください。また、保存済みのシェーダーを起動時にすべてではなく、ゲームが必要としたときに読み込みます：RAMの使用量が大きく減ります。",
+        "aniso": "床や道路、壁など斜めから見える面のテクスチャを鮮明に保ちます。オフ：ゲーム自身のフィルタリング。16xが最も鮮明で、多くのグラフィックカードでGPUへの負荷はわずかです。プレイ中も「オプション > PC設定」から変更できます。",
     },
 }
 # The PS4 system language the game sees (system_language in tlou.ini; tools/probe_tlou.py passes it
@@ -2909,7 +2934,7 @@ class PadView:
 
 
 class Launcher(tk.Tk):
-    WIDTH, HEIGHT = 1180, 716   # 716: room for Video memory (14 Nov) and the light beams (24 Nov 2026)
+    WIDTH, HEIGHT = 1180, 740   # room for Video memory (14 Nov), the light beams (24 Nov) and anisotropic filtering (25 Nov 2026)
 
     def __init__(self, seconds=0):
         # Its own taskbar entry and icon, not those of pythonw.exe.
@@ -3023,12 +3048,16 @@ class Launcher(tk.Tk):
                                     key_for(self.vram_labels, switches["low_vram"], self.t("vram_auto")),
                                     self.change_vram)
         self.info(panel, row + 9, "vram")
+        self.aniso_labels = {self.t("aniso_off"): "0", **{level + "x": level for level in ANISO_LEVELS}}
+        self.aniso = self.choice(panel, row + 10, self.t("aniso"), list(self.aniso_labels),
+                                 key_for(self.aniso_labels, ini.get("anisotropic_filter"), self.t("aniso_off")))
+        self.info(panel, row + 10, "aniso")
         self.info(panel, row + 3, "upscaler")
         self.info(panel, row + 4, "quality")
         self.info(panel, row + 5, "vsync")
         self.info(panel, row + 7, "ambient_half")
         self.info(panel, row + 8, "quarter_depth")
-        row = self.section(panel, row + 10, self.t("game"))
+        row = self.section(panel, row + 11, self.t("game"))
         self.motion_blur = self.check(panel, row, self.t("motion_blur"), switches["motion_blur"])
         self.job_sleep = self.check(panel, row + 1, self.t("job_sleep"), switches["job_sleep"])
         self.profile = self.check(panel, row + 2, self.t("profile"), switches["profile"])
@@ -3174,6 +3203,7 @@ class Launcher(tk.Tk):
                    "output_res": self.resolution_labels[self.resolution.get()],
                    "fps_limit": self.fps.get(), "upscaler": self.upscaler_labels[self.upscaler.get()],
                    "preset": self.preset_labels[self.preset.get()], "vsync": int(self.vsync.get()),
+                   "anisotropic_filter": self.aniso_labels[self.aniso.get()],
                    "show_fps": int(self.show_fps.get()),
                    "system_language": self.system_labels[self.system_language.get()]})
         SWITCHES.write_text(json.dumps({**self.switches(), "ui_language": self.language, "folders": self.folders,

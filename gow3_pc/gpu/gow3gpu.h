@@ -108,7 +108,8 @@ int gow3gpu_settings_fade_distance(void);
 int gow3gpu_settings_sun_shadow_distance(void);
 int gow3gpu_settings_light_shadow_distance(void);
 /* The game's own Options > PC SETTINGS page (src/runtime_menu_pc.c). A setting's value: 0/1,
- * a list index (display mode, FpsLimits, the anti-aliasing choices available) or a percent.
+ * a list index (display mode, FpsLimits, the anti-aliasing choices available, anisotropic
+ * filtering Off/2x/4x/8x/16x) or a percent.
  * count: the values of a toggle or list (2 for on/off; anti-aliasing 1 when this game has none).
  * choice: a list value's name (FPS and anti-aliasing; NULL otherwise). set: applied live; save:
  * the settings file. menu_open: opens the overlay settings menu (on the next presented frame),
@@ -116,7 +117,7 @@ int gow3gpu_settings_light_shadow_distance(void);
 enum {
     GOW3_PC_DISPLAY_MODE, GOW3_PC_VSYNC, GOW3_PC_FPS_LIMIT, GOW3_PC_ANTI_ALIASING, GOW3_PC_SHARPENING,
     GOW3_PC_PERF_OVERLAY, GOW3_PC_MOUSE_SENS, GOW3_PC_MOUSE_AIM_SENS, GOW3_PC_MOUSE_SCOPE_ON, GOW3_PC_MOUSE_SCOPE_SENS, GOW3_PC_MOUSE_VERTICAL,
-    GOW3_PC_MOUSE_INVERT, GOW3_PC_VIBRATION, GOW3_PC_SETTING_COUNT
+    GOW3_PC_MOUSE_INVERT, GOW3_PC_VIBRATION, GOW3_PC_ANISOTROPIC_FILTER, GOW3_PC_SETTING_COUNT
 };
 int gow3gpu_pc_setting(int setting);
 int gow3gpu_pc_setting_count(int setting);

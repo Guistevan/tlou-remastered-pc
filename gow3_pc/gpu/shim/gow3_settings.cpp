@@ -683,6 +683,10 @@ extern "C" int gow3gpu_pc_setting(int setting) {
     case GOW3_PC_MOUSE_VERTICAL: return Percent(s.mouse_vertical);
     case GOW3_PC_MOUSE_INVERT: return s.mouse_invert ? 1 : 0;
     case GOW3_PC_VIBRATION: return s.vibration ? 1 : 0;
+    case GOW3_PC_ANISOTROPIC_FILTER: {
+        const int level = s.anisotropic_filter;
+        return level >= 16 ? 4 : level >= 8 ? 3 : level >= 4 ? 2 : level >= 2 ? 1 : 0;
+    }
     default: return 0;
     }
 }
@@ -695,6 +699,7 @@ extern "C" int gow3gpu_pc_setting_count(int setting) {
         int choices[MaxAntiAliasingChoices];
         return AntiAliasingChoices(choices);
     }
+    case GOW3_PC_ANISOTROPIC_FILTER: return 5; // Off, 2x, 4x, 8x, 16x
     default: return 2;
     }
 }
@@ -704,6 +709,10 @@ extern "C" const char* gow3gpu_pc_setting_choice(int setting, int index) {
     if (setting == GOW3_PC_FPS_LIMIT) {
         static const char* const names[] = {"30", "40", "45", "50", "55", "60", "75", "90", "100", "120"};
         static_assert(std::size(names) == G::FpsLimits.size());
+        return index >= 0 && index < int(std::size(names)) ? names[index] : nullptr;
+    }
+    if (setting == GOW3_PC_ANISOTROPIC_FILTER) {
+        static const char* const names[] = {"Off", "2x", "4x", "8x", "16x"};
         return index >= 0 && index < int(std::size(names)) ? names[index] : nullptr;
     }
     if (setting == GOW3_PC_ANTI_ALIASING) {
@@ -747,6 +756,7 @@ extern "C" void gow3gpu_pc_setting_set(int setting, int value) {
     case GOW3_PC_MOUSE_VERTICAL: s.mouse_vertical = std::clamp(value, 25, 300) / 100.0f; controls = true; break;
     case GOW3_PC_MOUSE_INVERT: s.mouse_invert = value != 0; controls = true; break;
     case GOW3_PC_VIBRATION: s.vibration = value != 0; controls = true; break;
+    case GOW3_PC_ANISOTROPIC_FILTER: s.anisotropic_filter = std::clamp(value, 0, 4) ? 1 << std::clamp(value, 1, 4) : 0; break;
     default: return;
     }
     if (controls) Gow3Settings::ControlsChanged();
