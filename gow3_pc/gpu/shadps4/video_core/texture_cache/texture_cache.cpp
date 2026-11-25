@@ -26,6 +26,7 @@
 #include "video_core/texture_cache/host_compatibility.h"
 #include "video_core/texture_cache/texture_cache.h"
 #include "gow3_prompts.h"
+#include "gow3_settings.h"
 #include "video_core/texture_cache/tile_manager.h"
 
 // src/runtime_videodec.c: the last decoded video frame buffer (diagnostics).
@@ -1594,15 +1595,31 @@ void TextureCache::RefreshImage(Image& image) {
 vk::Sampler TextureCache::GetSampler(const AmdGpu::Sampler& sampler,
                                      AmdGpu::BorderColorBuffer border_color_base,
                                      const bool is_depth, float extra_lod_bias) {
-    // Compare and plain uses of one S# need separate samplers; so do extra LOD biases.
+    // Compare and plain uses of one S# need separate samplers; so do extra LOD biases and the
+    // menu's anisotropic filtering (a change makes new samplers; the old ones age out).
+    const u32 forced_aniso =
+        is_depth ? 0u : u32(Gow3Settings::Get().anisotropic_filter.load(std::memory_order_relaxed));
     const u64 hash = HashCombine(
-        HashCombine(HashCombine(XXH3_64bits(&sampler, sizeof(sampler)), is_depth),
-                    u64(std::bit_cast<u32>(extra_lod_bias))),
-        u64(is_depth ? sampler_compare_override.load(std::memory_order_relaxed) : 0));
+        HashCombine(HashCombine(HashCombine(XXH3_64bits(&sampler, sizeof(sampler)), is_depth),
+                                u64(std::bit_cast<u32>(extra_lod_bias))),
+                    u64(is_depth ? sampler_compare_override.load(std::memory_order_relaxed) : 0)),
+        u64(forced_aniso));
+    if (!is_depth) {
+        static std::atomic<u32> reported{~0u};
+        if (reported.exchange(forced_aniso, std::memory_order_relaxed) != forced_aniso) {
+            if (forced_aniso > 1) {
+                std::printf("Samplers: anisotropic filtering %ux on mipmapped textures (device max %.0fx)\n",
+                            forced_aniso, instance.MaxSamplerAnisotropy());
+            } else {
+                std::printf("Samplers: the game's own anisotropic filtering\n");
+            }
+            std::fflush(stdout);
+        }
+    }
 
     std::scoped_lock lock{samplers_mutex};
     const auto [it, new_sampler] = samplers.try_emplace(hash, instance, sampler, border_color_base,
-                                                        is_depth, extra_lod_bias);
+                                                        is_depth, extra_lod_bias, forced_aniso);
     if (new_sampler) {
         samplers.at(hash).lru_id = sampler_lru_cache.Insert(hash, gc_tick);
     } else {

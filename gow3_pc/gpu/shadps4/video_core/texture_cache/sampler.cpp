@@ -13,14 +13,28 @@
 namespace VideoCore {
 
 Sampler::Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
-                 const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth, float extra_lod_bias) {
+                 const AmdGpu::BorderColorBuffer border_color_base, const bool is_depth, float extra_lod_bias,
+                 u32 forced_anisotropy) {
     using namespace Vulkan;
-    const bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() &&
-                                   (AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
-                                    AmdGpu::IsAnisoFilter(sampler.xy_min_filter));
-    const float max_anisotropy =
+    bool anisotropy_enable = instance.IsAnisotropicFilteringSupported() &&
+                             (AmdGpu::IsAnisoFilter(sampler.xy_mag_filter) ||
+                              AmdGpu::IsAnisoFilter(sampler.xy_min_filter));
+    float max_anisotropy =
         anisotropy_enable ? std::clamp(sampler.MaxAniso(), 1.0f, instance.MaxSamplerAnisotropy())
                           : 1.0f;
+    // gow3 25 Nov 2026: the menu's anisotropic filtering (Gow3Settings::anisotropic_filter) on
+    // the samplers of mipmapped textures: a linear minification filter with a mip filter and
+    // more than one level (surfaces seen at an angle: floors, roads, walls). Point-filtered,
+    // single-level (render targets, post process) and compare samplers keep the game's own.
+    const bool mipmapped = sampler.mip_filter.Value() != AmdGpu::MipFilter::None &&
+                           sampler.MaxLod() > sampler.MinLod();
+    const bool linear_min = sampler.xy_min_filter.Value() == AmdGpu::Filter::Bilinear ||
+                            sampler.xy_min_filter.Value() == AmdGpu::Filter::AnisoLinear;
+    if (forced_anisotropy > 1 && !is_depth && mipmapped && linear_min &&
+        instance.IsAnisotropicFilteringSupported()) {
+        anisotropy_enable = true;
+        max_anisotropy = std::clamp(float(forced_anisotropy), 1.0f, instance.MaxSamplerAnisotropy());
+    }
     auto border_color = LiverpoolToVK::BorderColor(sampler.border_color_type);
     if (border_color == vk::BorderColor::eFloatCustomEXT &&
         !instance.IsCustomBorderColorSupported()) {

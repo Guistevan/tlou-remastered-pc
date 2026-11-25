@@ -180,6 +180,9 @@ void Set(Values& v, const std::string& key, const std::string& value) {
         v.rcas = i != 0;
     } else if (key == "rcas_strength") {
         v.rcas_strength = Gow3Graphics::ParseRcasStrength(value.empty() ? -1 : i);
+    } else if (key == "anisotropic_filter") {
+        // 0 (the game's own), 2, 4, 8 or 16; other values round down to one of these.
+        v.anisotropic_filter = i >= 16 ? 16 : i >= 8 ? 8 : i >= 4 ? 4 : i >= 2 ? 2 : 0;
     } else if (key == "frames_queued") {
         v.frames_queued = Gow3Graphics::ParseFramesQueued(value.empty() ? -1 : i);
     } else if (key == "render_resolution") {
@@ -301,6 +304,7 @@ void Load() {
         {"GOW3_ASYNC_SHADERS", "async_shaders"},      {"GOW3_DEFERRED_READBACK", "deferred_readback"},
         {"GOW3_STALE_READBACK", "stale_readback"},     {"GOW3_FSR1", "fsr1"},
         {"GOW3_RCAS", "rcas"},                        {"GOW3_FRAMES_AHEAD", "frames_queued"},
+        {"GOW3_ANISOTROPIC_FILTER", "anisotropic_filter"},
         {"GOW3_PAD_MAP", "pad_map"},                  {"GOW3_KEY_MAP", "key_map"},
         {"GOW3_MOUSE_MAP", "mouse_map"},              {"GOW3_MOUSE", "mouse"},
         {"GOW3_MOUSE_SENS", "mouse_sens"},            {"GOW3_MOUSE_INVERT", "mouse_invert"},
@@ -467,12 +471,13 @@ KeyValues Current() {
                  v.overlay_opacity.load(), v.overlay_layout.load(), v.menu_tab.load());
     Append(text,
                  "display_mode=%s\nvsync=%d\nfps_limit=%d\nasync_shaders=%d\n"
-                 "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\n"
+                 "fsr1=%d\nrcas=%d\nrcas_strength=%d\nframes_queued=%d\nanisotropic_filter=%d\n"
                  "deferred_readback=%d\nstale_readback=%d\n"
                  "restart_unconfirmed=%d\n",
                  Gow3Graphics::DisplayModeKeys[std::clamp(v.display_mode.load(), 0, 2)].data(),
                  int(v.vsync.load()), v.fps_limit.load(), int(v.async_shaders.load()),
                  int(v.fsr1.load()), int(v.rcas.load()), v.rcas_strength.load(), v.frames_queued.load(),
+                 v.anisotropic_filter.load(),
                  int(v.deferred_readback.load()), int(v.stale_readback.load()),
                  int(v.restart_unconfirmed.load()));
     // Read by run.sh at start.

@@ -23,7 +23,7 @@ class Sampler {
 public:
     explicit Sampler(const Vulkan::Instance& instance, const AmdGpu::Sampler& sampler,
                      const AmdGpu::BorderColorBuffer border_color_base, bool is_depth,
-                     float extra_lod_bias = 0.0f);
+                     float extra_lod_bias = 0.0f, u32 forced_anisotropy = 0);
     ~Sampler();
 
     Sampler(const Sampler&) = delete;

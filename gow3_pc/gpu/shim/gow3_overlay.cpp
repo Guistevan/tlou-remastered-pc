@@ -405,6 +405,11 @@ void ImageTab() {
         ChoiceRow("Display mode", s.display_mode, G::DisplayModeNames.data(), nullptr, G::DisplayModeCount,
                   "Windowed, borderless window or exclusive fullscreen.");
         CheckRow("VSync", s.vsync, "Waits for the monitor: no tearing, a little more input delay.");
+        static const char* const aniso_labels[] = {"Off (the game's own)", "2x", "4x", "8x", "16x"};
+        static const int aniso_values[] = {0, 2, 4, 8, 16};
+        ChoiceRow("Anisotropic filtering", s.anisotropic_filter, aniso_labels, aniso_values, 5,
+                  "Keeps textures sharp on surfaces seen at an angle (floors, roads, walls). 16x is the "
+                  "sharpest; costs little GPU time on most cards.");
         ImGui::EndTable();
     }
     const int iw = s.image_width, ih = s.image_height, ww = s.window_width, wh = s.window_height;
