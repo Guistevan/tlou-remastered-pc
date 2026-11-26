@@ -39,8 +39,12 @@ jobs:
       - name: Build tools and libraries (README, Building > Linux)
         run: |
           pacman -Syu --noconfirm --needed git cmake ninja pkgconf python zip unzip github-cli patchelf \
-            vulkan-headers vulkan-icd-loader vulkan-memory-allocator \
+            vulkan-headers vulkan-icd-loader \
             sdl3 ffmpeg fmt boost robin-map xxhash libx11 zydis glslang
+          # Arch has no package of the Vulkan Memory Allocator: its single header, at a release tag.
+          mkdir -p /usr/local/include/vma
+          curl -fsSL --retry 3 -o /usr/local/include/vma/vk_mem_alloc.h \
+            https://raw.githubusercontent.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator/v3.3.0/include/vk_mem_alloc.h
 
       - name: Check out the release's tag
         uses: actions/checkout@v4
