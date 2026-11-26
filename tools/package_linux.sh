@@ -14,10 +14,10 @@
 set -euo pipefail
 cd -- "$(dirname -- "$0")/.."
 name=TLOU-Remastered-linux
-# python-build-standalone's install_only build, pinned by its SHA-256 (kept in downloads/).
-python_url=https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.12.16%2B20261124-x86_64-unknown-linux-gnu-install_only.tar.gz
-python_sha256=6774c7f49ee21c1723f7ac91961a5bf9f3ee3ae6e4d82ff58bd358958b546461
-python_tar=downloads/cpython-3.12.16+20261124-x86_64-unknown-linux-gnu-install_only.tar.gz
+# python-build-standalone's install_only_stripped build (no debug symbols), pinned by its SHA-256 (kept in downloads/).
+python_url=https://github.com/astral-sh/python-build-standalone/releases/download/20261124/cpython-3.12.16%2B20261124-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
+python_sha256=7e1adaea26c959d13aa1120be1ae62a1ea1bb52adcb382679fffe9217e22adff
+python_tar=downloads/cpython-3.12.16+20261124-x86_64-unknown-linux-gnu-install_only_stripped.tar.gz
 
 if [[ ${1:-} != --no-build ]]; then
     # The GPU library's sources are compiled by absolute path: keep this checkout's path out of
@@ -57,6 +57,13 @@ if [[ ! -f $python_tar ]] || ! echo "$python_sha256  $python_tar" | sha256sum -c
     mv "$python_tar.part" "$python_tar"
 fi
 tar -xzf "$python_tar" -C "$stage"            # python/
+# The zip stores a symbolic link as a copy of its target: keep one interpreter, python3, as a file,
+# and the library under the name the interpreter loads.
+bin=$stage/python/bin
+cp --remove-destination -- "$(readlink -f -- "$bin/python3")" "$bin/python3.tmp"
+find "$bin" -maxdepth 1 -name 'python*' ! -name python3.tmp -delete
+mv "$bin/python3.tmp" "$bin/python3"
+find "$stage/python/lib" -maxdepth 1 -type l -name 'libpython*' -delete
 python=$stage/python/bin/python3
 lib=$(echo "$stage"/python/lib/python3.*)
 "$python" -I -m pip install --no-cache-dir --disable-pip-version-check --no-warn-script-location -q Pillow
