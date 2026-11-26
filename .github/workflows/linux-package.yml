@@ -1,35 +1,31 @@
-# The Linux package of a release (DRAFT: waits for tools/package_linux.sh).
+# The Linux package of a release.
 #
 # The maintainer publishes each release from Windows (tools/publish_release.py, with the Windows
 # package). Publishing it starts this workflow, which builds the Linux runtime in an Arch Linux
-# container at the release's tag and attaches TLOU-Remastered-linux.zip to the same release: the
-# name launcher/updater.py looks for on Linux.
-#
-# tools/package_linux.sh does not exist yet (the Linux port's packaging is a follow-up of PR #222).
-# Until it does, this workflow only builds the runtime at the tag, a check that the Linux build
-# still compiles, and attaches nothing. The script's contract:
-#   - run from the repository root after gow3_pc/build.sh, with --no-build;
-#   - write dist/TLOU-Remastered-linux.zip holding every path of updater.REQUIRED on Linux
-#     (checked below), VERSION from tools/VERSION.
+# container at the release's tag, packages it (tools/package_linux.sh) and attaches
+# TLOU-Remastered-linux.zip to the same release: the name launcher/updater.py looks for on Linux.
 #
 # Run it by hand (Actions > Linux package > Run workflow) to rebuild a release's package: it
-# then replaces the asset that is already there.
+# then replaces the asset that is already there. A push to the branch linux-package-test builds
+# the package of that commit and keeps it as the run's artifact, attached to no release.
 name: Linux package
 
 on:
   release:
     types: [published]
+  push:
+    branches: [linux-package-test]
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (v0.4.1, ...)"
+        description: "Release tag (v0.6.0, ...)"
         required: true
 
 permissions:
   contents: write   # attach the asset to the release
 
 concurrency:
-  group: linux-package-${{ github.event.release.tag_name || inputs.tag }}
+  group: linux-package-${{ github.event.release.tag_name || inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -37,12 +33,12 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     env:
-      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      TAG: ${{ github.event.release.tag_name || inputs.tag || github.sha }}
       ASSET: dist/TLOU-Remastered-linux.zip
     steps:
       - name: Build tools and libraries (README, Building > Linux)
         run: |
-          pacman -Syu --noconfirm --needed git cmake ninja pkgconf python zip unzip github-cli \
+          pacman -Syu --noconfirm --needed git cmake ninja pkgconf python zip unzip github-cli patchelf \
             vulkan-headers vulkan-icd-loader vulkan-memory-allocator \
             sdl3 ffmpeg fmt boost robin-map xxhash libx11 zydis glslang
 
@@ -56,22 +52,15 @@ jobs:
       - name: Build the runtime
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          # The GPU library compiles by absolute path: keep the runner's path out of the asserts.
+          export CFLAGS="-ffile-prefix-map=$GITHUB_WORKSPACE=." CXXFLAGS="-ffile-prefix-map=$GITHUB_WORKSPACE=."
           bash gow3_pc/build.sh
           ls -la gow3_pc/out/gow3-probe
 
       - name: Package
-        id: package
-        run: |
-          if [ ! -f tools/package_linux.sh ]; then
-            echo "::notice::tools/package_linux.sh is not in $TAG yet: the runtime built, no Linux package attached."
-            echo "ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          bash tools/package_linux.sh --no-build
-          echo "ready=true" >> "$GITHUB_OUTPUT"
+        run: bash tools/package_linux.sh --no-build
 
       - name: Check the package against the updater
-        if: steps.package.outputs.ready == 'true'
         run: |
           python3 - "$ASSET" <<'EOF'
           import sys, zipfile
@@ -95,10 +84,26 @@ jobs:
           print(len(names), "files; every path the updater requires is there")
           EOF
           version=$(cat tools/VERSION)
-          [ "v$version" = "$TAG" ] || echo "::warning::tools/VERSION is $version, the tag is $TAG"
+          [ "${{ github.event_name }}" = push ] || [ "v$version" = "$TAG" ] || \
+            echo "::warning::tools/VERSION is $version, the tag is $TAG"
+
+      - name: Smoke test the packaged launcher and Python
+        run: |
+          cd dist/TLOU-Remastered-linux
+          python/bin/python3 -c "import tkinter, PIL, ssl, sqlite3; print('python', tkinter.TkVersion, PIL.__version__)"
+          PYTHONPATH=gow3_pc/out/pydeps python/bin/python3 -c "import iced_x86; print('iced_x86 ok')"
+          python/bin/python3 tools/run_game.py --help > /dev/null && echo "run_game.py ok"
+
+      - name: Keep a test build as the run's artifact
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: TLOU-Remastered-linux
+          path: ${{ env.ASSET }}
+          compression-level: 0
 
       - name: Attach to the release
-        if: steps.package.outputs.ready == 'true'
+        if: github.event_name != 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
