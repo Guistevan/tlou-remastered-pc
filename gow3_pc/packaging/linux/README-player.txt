@@ -8,7 +8,8 @@ Requisitos: Linux de 64 bits, placa de vídeo com driver Vulkan 1.3 (Mesa ou NVI
 bibliotecas da distribuição: o carregador Vulkan, SDL3, FFmpeg, fmt, Zydis, xxHash e X11. O
 pacote foi montado no Arch Linux e precisa das mesmas versões; licenses/THIRD-PARTY.txt lista as
 bibliotecas exatas. No Arch:
-  sudo pacman -S --needed vulkan-icd-loader sdl3 ffmpeg fmt zydis xxhash libx11 Não precisa instalar Python.
+  sudo pacman -S --needed vulkan-icd-loader sdl3 ffmpeg fmt zydis xxhash libx11
+Não precisa instalar Python.
 
 1. Extraia o zip em uma pasta com bastante espaço livre.
 2. Abra "TLOU-Launcher" (no terminal: ./TLOU-Launcher).
@@ -31,7 +32,8 @@ Requirements: 64-bit Linux, a graphics card with a Vulkan 1.3 driver (Mesa or NV
 libraries of your distribution: the Vulkan loader, SDL3, FFmpeg, fmt, Zydis, xxHash and X11. The
 package was built on Arch Linux and needs the same versions; licenses/THIRD-PARTY.txt lists the
 exact libraries. On Arch:
-  sudo pacman -S --needed vulkan-icd-loader sdl3 ffmpeg fmt zydis xxhash libx11 No Python install is needed.
+  sudo pacman -S --needed vulkan-icd-loader sdl3 ffmpeg fmt zydis xxhash libx11
+No Python install is needed.
 
 1. Extract the zip to a folder with plenty of free space.
 2. Open "TLOU-Launcher" (from a terminal: ./TLOU-Launcher).
