@@ -16,12 +16,14 @@
 #include "cheat_hook.h"
 #include "actor_hook.h"
 #include "damage_hook.h"
+#include "near_gap.h"
 #include "runtime_mouselook.h"
 #include "runtime_gamesettings.h"
 #include "gpu/gow3gpu.h"
 #if !defined(__x86_64__) || !defined(__GNUC__)
 #error This prototype requires x86-64 GCC or Clang (including MinGW).
 #endif
+#include <x86intrin.h>
 #ifdef _WIN32
 #include <windows.h>
 #include <tlhelp32.h>
@@ -36,6 +38,7 @@
 #include <execinfo.h>
 #include <sys/syscall.h>
 #include <sys/uio.h>
+#include <time.h>
 #endif
 
 typedef struct { uint64_t address, size, flags; } Segment;
@@ -128,6 +131,17 @@ __asm__(".text\n.globl enter_on_stack\nenter_on_stack:\n"
         " mov %rbp,%rsp\n pop %rbp\n ret\n");
 #endif
 static ABI void guest_exit(void) { puts("Runtime: process finalizer callback reached"); }
+/* GOW3_RED_ZONE_STATS=1: of the faults guest code took, how many were protected instructions. */
+static void note_red_zone_fault(uintptr_t rip) {
+    static int on=-1;
+    if (on<0) { const char *env=getenv("GOW3_RED_ZONE_STATS"); on=env && env[0]=='1'; }
+    if (!on || !red_zone || rip-(uintptr_t)image>=0x20000000) return;
+    static uint64_t total, in_stubs;
+    const uint64_t n=__atomic_add_fetch(&total,1,__ATOMIC_RELAXED);
+    const int stub=rip-(uintptr_t)red_zone->rz_area<red_zone->rz_code_bytes;
+    const uint64_t s=stub ? __atomic_add_fetch(&in_stubs,1,__ATOMIC_RELAXED) : __atomic_load_n(&in_stubs,__ATOMIC_RELAXED);
+    if (!(n&8191)) printf("Red zone: %" PRIu64 " of %" PRIu64 " guest faults came from protected instructions\n",s,n);
+}
 #ifdef _WIN32
 static void describe_address(char *out, size_t size, uintptr_t address) {
     HMODULE module=NULL;
@@ -504,17 +518,6 @@ static void cover_current_stack(const CONTEXT *context) {
     }
     tib->StackLimit=(PVOID)low; tib->StackBase=(PVOID)high;
 }
-/* GOW3_RED_ZONE_STATS=1: of the faults guest code took, how many were protected instructions. */
-static void note_red_zone_fault(uintptr_t rip) {
-    static int on=-1;
-    if (on<0) { const char *env=getenv("GOW3_RED_ZONE_STATS"); on=env && env[0]=='1'; }
-    if (!on || !red_zone || rip-(uintptr_t)image>=0x20000000) return;
-    static uint64_t total, in_stubs;
-    const uint64_t n=__atomic_add_fetch(&total,1,__ATOMIC_RELAXED);
-    const int stub=rip-(uintptr_t)red_zone->rz_area<red_zone->rz_code_bytes;
-    const uint64_t s=stub ? __atomic_add_fetch(&in_stubs,1,__ATOMIC_RELAXED) : __atomic_load_n(&in_stubs,__ATOMIC_RELAXED);
-    if (!(n&8191)) printf("Red zone: %" PRIu64 " of %" PRIu64 " guest faults came from protected instructions\n",s,n);
-}
 static LONG CALLBACK vectored_fault(EXCEPTION_POINTERS *info) {
     const EXCEPTION_RECORD *record=info->ExceptionRecord;
     DWORD code=record->ExceptionCode;
@@ -610,10 +613,37 @@ static uint64_t patch_tcb_loads(const Segment *segments, uint64_t count) {
 }
 #endif
 #ifndef _WIN32
+/* gow3 (Linux): the Windows CRT (ucrtbase) defines __ImageBase; the GPU library uses
+ * &__ImageBase as an anchor inside the loader image (buffer_cache, vk_scheduler). */
+char __ImageBase;
+/* gow3 (Linux): instruction/data watches use the Win32 debug registers and exception
+ * handlers (the Windows-only block above); the GPU library's diagnostic hooks (GOW3_SRT_WATCH,
+ * GOW3_TRACE_WATCH_NODE, GOW3_RESULT_WATCH) are no-ops here. */
+void runtime_exec_watch_retarget(uint64_t address) {
+    static int noted;
+    if (!noted++) printf("Exec watch: Windows-only diagnostics (debug registers), ignored on POSIX\n");
+    (void)address;
+}
+void runtime_exec_watch_set_reads(const uint64_t *addresses, int count) {
+    static int noted;
+    if (!noted++) printf("Exec watch: Windows-only diagnostics (debug registers), ignored on POSIX\n");
+    (void)addresses; (void)count;
+}
+#endif
+#ifndef _WIN32
 static void fault(int sig, siginfo_t *info, void *context) {
+    ucontext_t *uc = context;
+    const uintptr_t rip = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
     /* GPU page tracking (write-protected guest pages) is resolved first, except during a
-     * speculative read: see vectored_fault. */
-    if (gpu_enabled && sig == SIGSEGV && !runtime_fault_recover && gow3gpu_handle_fault(context, info->si_addr)) return;
+     * speculative read: see vectored_fault. (Linux puts its signal frame below the 128-byte red
+     * zone already; the red-zone table is loaded here for its ISA emulation, MOVBE/AVX2/F16C on
+     * CPUs without them, and the stats count its stubs the same way.) */
+    if (gpu_enabled && sig == SIGSEGV && !runtime_fault_recover) {
+        if (gow3gpu_handle_fault(context, info->si_addr)) {
+            note_red_zone_fault(rip);
+            return;
+        }
+    }
     /* A speculative guest memory read (runtime_memory.c) failed: resume its recovery point. */
     if ((sig == SIGSEGV || sig == SIGBUS) && runtime_fault_recover) {
         sigjmp_buf *recover = runtime_fault_recover;
@@ -625,11 +655,13 @@ static void fault(int sig, siginfo_t *info, void *context) {
         siglongjmp(*recover, 1);
     }
     /* The process is terminating: dladdr/snprintf are acceptable here. */
-    ucontext_t *uc = context;
-    uintptr_t rip = (uintptr_t)uc->uc_mcontext.gregs[REG_RIP];
     char line[512];
     Dl_info where;
-    if (rip - (uintptr_t)image < 0x10000000)
+    uint64_t site = 0;
+    if (red_zone && red_zone_site_of_stub(red_zone, rip, &site))
+        snprintf(line, sizeof(line), "Guest fault (signal %d) at guest offset 0x%llx (red-zone stub), address %p\n",
+                 sig, (unsigned long long)site, info->si_addr);
+    else if (rip - (uintptr_t)image < 0x10000000)
         snprintf(line, sizeof(line), "Guest fault (signal %d) at guest offset 0x%lx, address %p\n",
                  sig, (unsigned long)(rip - (uintptr_t)image), info->si_addr);
     else if (dladdr((void *)rip, &where) && where.dli_fname)
@@ -741,6 +773,7 @@ extern void gow3_stat_multipliers_status(int damage, int orb_pickup);
 
 /* The hooks below find their sites by signature (src/signature.h), so they work in any region
  * and version of the game whose code matches; a site that is not found leaves its feature off. */
+static unsigned char *allocate_near_image(uint64_t size);
 static void install_cheats(Segment *segments, uint64_t count, uint64_t size) {
     const char *names[] = {"health", "magic", "item meter", "Rage of Sparta", "red orbs",
                            "Very Hard unlock", "infinite double jumps"};
@@ -759,7 +792,11 @@ static void install_cheats(Segment *segments, uint64_t count, uint64_t size) {
             printf("Cheats: %s unavailable (code not found in this eboot.bin)\n", names[id]);
             continue;
         }
-        unsigned char *stubs = allocate(page_size);
+        unsigned char *stubs = allocate_near_image(size);
+        if (!stubs) {
+            printf("Cheats: %s unavailable (no stub page in range)\n", names[id]);
+            continue;
+        }
         int32_t relative[GOW3_CHEAT_HOOK_COUNT] = {0};
         for (unsigned i = 0; i < GOW3_CHEAT_HOOK_COUNT; ++i) {
             const Gow3CheatHook *hook = &gow3_cheat_hooks[i];
@@ -797,7 +834,11 @@ static void install_actor_watch(Segment *segments, uint64_t count, uint64_t size
         printf("Health display: unavailable (code not found in this eboot.bin)\n");
         return;
     }
-    unsigned char *stub = allocate(page_size);
+    unsigned char *stub = allocate_near_image(size);
+    if (!stub) {
+        printf("Health display: unavailable (no stub page in range)\n");
+        return;
+    }
     const int64_t delta = (int64_t)(uintptr_t)stub - (int64_t)(uintptr_t)(image + at + 5);
     if (delta < INT32_MIN || delta > INT32_MAX) {
         printf("Health display: unavailable (hook outside relative-jump range)\n");
@@ -825,7 +866,11 @@ static void install_orb_multiplier(Segment *segments, uint64_t count, uint64_t s
     }
     /* SysV call sites: preserve the receiver across the helper, then tail-call the original
      * setter. Its cap and upgrade notifications remain in the game's own code. */
-    unsigned char *stub = allocate(page_size);
+    unsigned char *stub = allocate_near_image(size);
+    if (!stub) {
+        printf("Red orbs: multiplier unavailable (no stub page in range)\n");
+        return;
+    }
     uintptr_t helper = (uintptr_t)gow3_orbs_gain, setter = (uintptr_t)(image + setter_at);
     unsigned char code[26];
     gow3_orb_build_stub(code, helper, setter);
@@ -876,8 +921,47 @@ static unsigned char *allocate_near_image(uint64_t size) {
     }
     return NULL;
 #else
-    (void)size;
-    return allocate(page_size);
+    /* Free gaps within +-1.5 GiB of the image, as on Windows. The guest's own memory lives at
+     * 32 GiB and up (LOW_MIN/USER_MIN in runtime_memory.c), so the low 2 GiB around the image
+     * holds only the host executable, the image and the glibc heap; the gaps between them stay
+     * free for this process. MAP_FIXED_NOREPLACE only takes a gap that is still unmapped when
+     * called, so nothing in use is ever replaced. */
+    const uint64_t span = UINT64_C(0x60000000), min_addr = 0x10000;   /* vm.mmap_min_addr */
+    const uint64_t lo = (uint64_t)(uintptr_t)image > span + min_addr ? (uint64_t)(uintptr_t)image - span : min_addr;
+    const uint64_t hi = (uint64_t)(uintptr_t)image + size + span;
+    FILE *maps = fopen("/proc/self/maps", "r");
+    if (!maps) return NULL;
+    unsigned char *found = NULL;
+    char line[256];
+    uint64_t prev_end = lo;   /* the free space below the first mapping counts too */
+    int line_start = 1;
+    while (!found && prev_end < hi && fgets(line, sizeof line, maps)) {
+        /* A mapped file's path can be longer than the buffer: only a line's own start holds
+         * its range, the rest of a long line is skipped. */
+        const int at_start = line_start;
+        line_start = strchr(line, '\n') != NULL;
+        uint64_t a, b;
+        if (!at_start || sscanf(line, "%" SCNx64 "-%" SCNx64, &a, &b) != 2) continue;
+        if (a > prev_end) {
+            const uint64_t start = near_gap_page(prev_end, a, lo, hi, page_size);
+            if (start) {
+                void *p = mmap((void *)(uintptr_t)start, page_size, PROT_READ | PROT_WRITE,
+                               MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+                if (p != MAP_FAILED) found = p;
+            }
+        }
+        if (b > prev_end) prev_end = b;
+    }
+    fclose(maps);
+    if (!found && prev_end < hi) {   /* free up to the window's top, past the last mapping read */
+        const uint64_t start = near_gap_page(prev_end, hi, lo, hi, page_size);
+        if (start) {
+            void *p = mmap((void *)(uintptr_t)start, page_size, PROT_READ | PROT_WRITE,
+                           MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE, -1, 0);
+            if (p != MAP_FAILED) found = p;
+        }
+    }
+    return found;
 #endif
 }
 /* Mouse look stub (src/runtime_mouselook.h): saves rax, rcx, rdx, rsi, rdi, r8-r11 and xmm0-7
@@ -995,7 +1079,11 @@ static void install_stat_multipliers(Segment *segments, uint64_t count, uint64_t
                  gow3_damage_signature_match(image + damage_at, size - damage_at);
     int pickup = pickup_at != UINT64_MAX && mapped(segments, count, pickup_at, GOW3_ORB_PICKUP_LENGTH) &&
                  gow3_orb_pickup_signature_match(image + pickup_at, size - pickup_at);
-    unsigned char *stubs = damage || pickup ? allocate(page_size) : NULL;
+    unsigned char *stubs = damage || pickup ? allocate_near_image(size) : NULL;
+    if ((damage || pickup) && !stubs) {
+        puts("Multipliers: no stub page in range");
+        damage = pickup = 0;
+    }
     if (damage) {
         gow3_damage_build_stub(stubs, gow3_damage_multiplier(1), gow3_damage_multiplier(0),
                                (uintptr_t)(image + damage_at + GOW3_DAMAGE_HOOK_LENGTH));
@@ -1162,6 +1250,43 @@ static void apply_patches(const char *path, Segment *segments, uint64_t ns, cons
     fclose(f);
     printf("Patches: %" PRIu64 " writes, %" PRIu64 " bytes applied, %" PRIu64 " pointers rebased\n",count,bytes,rebased);
 }
+/* A TSC divisor of the game (TLOU Remastered eboot 1.11, 0x153D958): about 150 inline
+ * "rdtsc; (now - start) / [0x153D958]" sequences turn raw TSC deltas into milliseconds with
+ * this qword, burned in as 3,000,000 ticks per ms (the PS4's 3.0 GHz TSC). They are elapsed-time
+ * checks (the renderer's frame watchdog at 0xB3D7E3 is one, FIXES["frame-timeout"] in
+ * tools/probe_tlou.py); on a host whose TSC is not 3.0 GHz their milliseconds are off by
+ * host/3.0 GHz, on every platform.
+ * They are not the game's speed: the Windows build runs at normal speed with this divisor
+ * untouched. The game's clock follows sceKernelGetTscFrequency, which must match the inline
+ * RDTSC rate: tools/probe_tlou.py sets GOW3_NATIVE_TSC=1 for that, and before this port the
+ * POSIX runtime ignored it (1 GHz reported against a 4 GHz rdtsc: the Linux "fast game").
+ * GOW3_TSC_PATCH=1 (opt-in, POSIX) sets the divisor to the measured host rate anyway, to make
+ * those checks' milliseconds real; the default leaves the image as on Windows. */
+#ifndef _WIN32
+static void calibrate_guest_tsc(unsigned char *image, Segment *segments, uint64_t ns) {
+    const char *on = getenv("GOW3_TSC_PATCH");
+    if (!on || strcmp(on, "1")) return;
+    const uint64_t at = 0x153D958;
+    if (!mapped(segments, ns, at, 8)) { printf("TSC: 0x%llx is not in this image; left as is\n", (unsigned long long)at); return; }
+    uint64_t before;
+    memcpy(&before, image + at, 8);
+    if (before != 3000000) { printf("TSC: divisor already %llu (the PS4's 3,000,000 expected); left as is\n", (unsigned long long)before); return; }
+    struct timespec t0, t1, sleep = {0, 125000000};
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    const uint64_t begin = __rdtsc();
+    nanosleep(&sleep, NULL);
+    const uint64_t stop = __rdtsc();
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    const long double seconds = (long double)(t1.tv_sec - t0.tv_sec) + (long double)(t1.tv_nsec - t0.tv_nsec) / 1e9L;
+    if (seconds <= 0.05L) { printf("TSC: the measurement was too short; left as is\n"); return; }
+    const uint64_t hz = (uint64_t)((long double)(stop - begin) / seconds);
+    if (hz < 1000000000ULL || hz > 20000000000ULL) { printf("TSC: %.2f GHz is implausible; left as is\n", (double)hz / 1e9); return; }
+    const uint64_t per_ms = (hz + 500) / 1000;
+    memcpy(image + at, &per_ms, 8);
+    printf("Runtime: guest TSC divisor %llu -> %llu (host TSC %.3f GHz; GOW3_TSC_PATCH, the game's elapsed-time checks ran %.3fx fast)\n",
+           (unsigned long long)before, (unsigned long long)per_ms, (double)hz / 1e9, (double)per_ms / (double)before);
+}
+#endif
 /* Restarts the game through run.sh (the settings menu: a new render resolution is a patch
  * applied at start). Descriptors are closed first so the old GPU device and its memory are
  * released before the new process opens its own. */
@@ -1406,13 +1531,11 @@ int main(int argc, char **argv) {
         }
     }
     /* The red-zone stubs follow the image (rel32 jmps reach them). */
-#ifdef _WIN32
     if (red_zone_file) red_zone=red_zone_load(red_zone_file);
     if (red_zone && red_zone->rz_code_offset!=round_page(size)) {
         printf("Red zone: protection unavailable (stub offset does not match this page size)\n");
         red_zone=NULL;
     }
-#endif
     const size_t red_zone_area = red_zone ? round_page(red_zone_code_size(red_zone)) : 0;
     const size_t image_area = round_page(size) + red_zone_area;
     image = low_image ? allocate_low_image(image_area) : allocate(image_area);
@@ -1484,6 +1607,9 @@ int main(int argc, char **argv) {
         _exit(missing ? 1 : 0); /* no destructors: GPU threads are running */
     }
     if (patch_file) apply_patches(patch_file, segments, ns, relocs, nr);
+#ifndef _WIN32
+    calibrate_guest_tsc(image, segments, ns);
+#endif
     if (gpu_enabled) install_mouse_look(segments, ns, size);
     if (gpu_enabled) install_stick_boost(segments, ns, size);
     if (gpu_enabled) install_menu_exit(segments, ns, size);

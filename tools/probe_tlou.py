@@ -15,6 +15,8 @@ import sys
 import time
 from pathlib import Path
 
+import gow3_data   # tools/gow3_data.py: the player data's root folder (GOW3_DATA_DIR)
+
 ROOT = Path(__file__).resolve().parent.parent
 UPDATE_SUFFIXES = ("-patch", "-update")
 
@@ -66,7 +68,9 @@ def app_version(folder):
 
 def boot_view(base, update):
     """Copies of what the prepare scripts read (eboot.bin, sce_module, sce_sys), the update's
-    over the game's, in analysis/views (copied again only when a source changes)."""
+    over the game's, in the data root's views/ (analysis/views in a checkout, or
+    $GOW3_DATA_DIR/views inside the AppImage, whose package folder is read-only); a file is
+    copied again only when a source changes."""
     chosen = {}
     for layer in (base, update) if update else (base,):
         for entry in layer.iterdir():
@@ -77,7 +81,7 @@ def boot_view(base, update):
                     if path.is_file():
                         relative = path.relative_to(layer)
                         chosen[str(relative).lower()] = (str(relative), path)
-    view = ROOT / "analysis/views" / ("boot-" + (update or base).name)
+    view = gow3_data.data_root(ROOT) / "views" / ("boot-" + (update or base).name)
     for relative, source in chosen.values():
         dest = view / relative
         wanted = source.stat()
@@ -476,7 +480,8 @@ def image_patches(elf_path, out_path, patches, applied=None):
 
 
 def game_executable():
-    built = ROOT / "gow3_pc/out/gow3-probe.exe"
+    name = "gow3-probe.exe" if sys.platform == "win32" else "gow3-probe"
+    built = ROOT / "gow3_pc/out" / name
     if not built.is_file():
         raise SystemExit(f"Build the runtime first (gow3_pc/build.sh): {built} is missing")
     return built
@@ -489,12 +494,15 @@ def main():
     parser.add_argument("--cpu-only", action="store_true")
     parser.add_argument("--seconds", type=int, default=60, help="Process time limit; 0 disables it")
     parser.add_argument("--capture", type=int, default=0, metavar="SECONDS",
-                        help="Save the displayed frame every SECONDS (analysis/tlou/captures)")
+                        help="Save the displayed frame every SECONDS (the data folder's tlou/captures)")
     parser.add_argument("--saves", type=Path, default=None,
-                        help="Saves and game settings folder (default analysis/tlou-user, the "
-                             "player's): a test profile leaves the player's saves alone")
+                        help="Saves and game settings folder (default: the player data's tlou-user, "
+                             "analysis/tlou-user or GOW3_DATA_DIR): a test profile leaves the player's saves alone")
     args = parser.parse_args()
     game = args.game.resolve()
+    if not game.is_dir():
+        raise SystemExit(f"Game folder not found: {game} (select it in the launcher, or use "
+                         f"--game <folder>)")
     update = find_update(game)
     if update:
         print(f"Game {game} (version {app_version(game)}) with its update {update} "
@@ -508,8 +516,9 @@ def main():
                   "Copy the update's eboot.bin, sce_module and sce_sys over the game's (replace the "
                   f"files), or keep the update in its own folder next to the game ({game.name}-patch).",
                   flush=True)
-    out = ROOT / "analysis/tlou"
-    user = ROOT / "analysis/tlou-user"
+    data = gow3_data.data_root(ROOT)
+    out = data / "tlou"
+    user = data / "tlou-user"
     user.mkdir(parents=True, exist_ok=True)
     # Diagnostic switches (tlou_pad.py) last for one run: a new run starts with the defaults.
     # A file that cannot be removed (Windows answered "access denied" for probe-pad.txt left by a
@@ -527,7 +536,7 @@ def main():
             except OSError:
                 print(f"WARNING: could not remove or empty {user / name} ({error}); "
                       "the diagnostic switch it holds stays on for this run", flush=True)
-    # The diagnostic files and the shader cache stay in analysis/tlou-user either way.
+    # The diagnostic files and the shader cache stay in the tlou-user folder either way.
     saves = args.saves.resolve() if args.saves else user
     saves.mkdir(parents=True, exist_ok=True)
     view = boot_view(game, update)
@@ -566,8 +575,11 @@ def main():
     env = dict(os.environ)
     if isa_names and not cpu_features.missing_blocking():
         env["GOW3_CPU_CHECK"] = "0"           # the runtime would stop on the sets that are emulated now
-    msys = Path(os.environ.get("MSYS2_ROOT", "C:/msys64"))
-    env["PATH"] = str(msys / "clang64/bin") + os.pathsep + env.get("PATH", "")
+    # The Windows runtime links against MSYS2 CLANG64's own DLLs (libstdc++ and friends),
+    # which the process finds through PATH.
+    if sys.platform == "win32":
+        msys = Path(os.environ.get("MSYS2_ROOT", "C:/msys64"))
+        env["PATH"] = str(msys / "clang64/bin") + os.pathsep + env.get("PATH", "")
     env["GOW3_GPU_USER_DIR"] = str(user)
     # The shader cache: analysis/tlou-user/cache or, when that is a link (a junction to an SSD,
     # README), the folder it points to.
@@ -680,7 +692,10 @@ def main():
 
     command = [str(game_executable()), str(out / "boot-linked.bin"),
                "--no-game-hooks", "--low-image", "--content-profile", str(out / "content.bin"),
-               "--app0", str(game), "--user", str(saves)]
+               "--app0", str(game), "--user", str(saves),
+               # A player's session is not capped by the runtime's development watchdog (POSIX
+               # default 10 s, hard exit; Windows has no watchdog and ignores this argument).
+               "--timeout", "0"]
     if update:
         command += ["--app0-overlay", str(update)]
     command += ["--guest-path", "/app0/eboot.bin"]

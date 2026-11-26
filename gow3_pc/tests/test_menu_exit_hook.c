@@ -254,11 +254,12 @@ int main(void) {
     static const unsigned char text_original[GOW3_MENU_TEXT_LENGTH] = {0x55, 0x48, 0x89, 0xe5, 0x41, 0x57};
     unsigned original_at = 0;
     n = gow3_menu_build_text_stub(stub, 0x1111, 0x2222, text_original, &original_at);
+    /* 30u: original_at is unsigned (clang does not warn, GCC's -Wsign-compare does). */
     assert(n <= 64 && original_at == 42 && stub[12] == 0x72 && 14 + stub[13] == 30);
     assert(stub[14] == 0x81 && stub[15] == 0xfe && gow3_menu_u32(stub + 16) == GOW3_MENU_TEXT_SUBTITLES_ON);
     assert(stub[20] == 0x74 && 22 + stub[21] == 30);
     assert(stub[22] == 0x81 && stub[23] == 0xfe && gow3_menu_u32(stub + 24) == GOW3_MENU_TEXT_SUBTITLES_OFF);
-    assert(stub[28] == 0x75 && 30 + stub[29] == original_at && stub[30] == 0x48 && stub[31] == 0xb8);
+    assert(stub[28] == 0x75 && 30u + stub[29] == original_at && stub[30] == 0x48 && stub[31] == 0xb8);
     assert(stub[0] == 0x89 && stub[1] == 0xf0 && stub[2] == 0x2d && stub[7] == 0x3d);
     assert(gow3_menu_u32(stub + 3) == GOW3_MENU_TEXT_FIRST);
     assert(gow3_menu_u32(stub + 8) == GOW3_MENU_TEXT_LAST - GOW3_MENU_TEXT_FIRST + 1);

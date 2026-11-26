@@ -199,7 +199,7 @@ the update recompiles the materials' shaders once.
 
 ## 💻 Requirements
 
-- Windows 10 or 11 (64-bit).
+- Windows 10 or 11, or a 64-bit Linux distribution.
 - A CPU with AVX, SSE4.2 and POPCNT: Intel 2nd-generation Core (Sandy Bridge) or newer, or any
   AMD Ryzen. The game's code also uses F16C, BMI1, MOVBE and LZCNT; on CPUs older than Haswell
   (Sandy / Ivy Bridge) those instructions are replaced by equivalent code when the game starts
@@ -243,6 +243,14 @@ Needs Python 3.10 or newer.
    from a hard disk that takes long enough for the game to build pipelines itself, pausing for
    seconds. With the game closed, move the folder, then link it back:
    `mklink /J analysis\tlou-user\cache <folder on the SSD>` (in `cmd`).
+
+#### Linux
+
+`python3 launcher/tlou_launcher.pyw` starts the launcher (Python 3.10 or newer
+with tkinter — `python3-tk` on Debian/Ubuntu, `python3-tkinter` on Fedora —
+Pillow is optional, for the launcher's window icon): build the runtime first
+(Building), choose the game folder under Folders and press Play. Saves, settings
+and logs stay where step 3 says.
 
 ### Resolution and ultrawide
 
@@ -366,7 +374,12 @@ PlayGo reports the others as not installed, so a save that asks for one gets Eng
 
 ## 🛠️ Building
 
-From an MSYS2 **CLANG64** shell:
+`gow3_pc/build.sh` builds the runtime for the platform it runs on.
+
+The launcher reads its background and icon from the player's own copy of the game. A local icon goes
+in `launcher/assets/icon.ico` (not in the repository).
+
+### Windows (MSYS2 **CLANG64** shell)
 
 ```bash
 pacman -S --needed git patch \
@@ -379,18 +392,29 @@ gow3_pc/build.sh                 # the runtime: gow3_pc/out/gow3-probe.exe
 ```
 
 Clone with `core.autocrlf=false`: line-ending conversion breaks the FSR-Vulkan patches.
-
-`gow3_pc/build.sh` also builds `launcher/TLOU Launcher.exe`. With a profile in
-`gow3_pc/pgo/tlou.profdata` it builds with PGO and LTO (about 10% more FPS in the heaviest area
-tested); the profile is not in the repository, and without it the build is plain. `GOW3_PGO=off`
-gives quicker development builds. A new profile needs a clean build.
-
+`gow3_pc/build.sh` also builds `launcher/TLOU Launcher.exe`.
 `tools/package_windows.sh` builds `dist/TLOU-Remastered-windows.zip`, the release: the runtime and
 its DLLs, the launcher, the scripts and a Python of its own. `tools/package_check.py` refuses game
 files and paths of the build machine.
 
-The launcher reads its background and icon from the player's own copy of the game. A local icon goes
-in `launcher/assets/icon.ico` (not in the repository).
+### Linux
+
+Install the build tools (git, a C/C++ compiler, cmake, ninja, pkg-config) and the
+libraries: the Vulkan loader and headers, the Vulkan Memory Allocator (header),
+SDL3, FFmpeg (libavcodec, libavformat, libavutil, libswscale, libswresample),
+fmt, Boost, robin-map, xxHash, X11, Zydis and glslang. On Arch, for example:
+
+```bash
+sudo pacman -S --needed git base-devel cmake ninja pkgconf \
+  vulkan-headers vulkan-icd-loader vulkan-memory-allocator \
+  sdl3 ffmpeg fmt boost robin-map xxhash libx11 zydis glslang
+git submodule update --init --recursive
+bash gow3_pc/build.sh                 # the runtime: gow3_pc/out/gow3-probe
+```
+
+On a CPU older than Haswell (Sandy / Ivy Bridge) the table that replaces the missing
+instructions (Requirements) needs the `iced-x86` Python package, installed once per
+checkout: `python3 -m pip install --no-cache-dir --target gow3_pc/out/pydeps iced-x86`.
 
 ## 📁 Repository layout
 
