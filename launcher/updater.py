@@ -192,6 +192,11 @@ def stage(archive, root, version):
             target.parent.mkdir(parents=True, exist_ok=True)
             with package.open(info) as source, target.open("wb") as out:
                 shutil.copyfileobj(source, out, 1 << 20)
+            # POSIX: the zip keeps each file's mode in its upper attribute bits; without it the
+            # starters, Python and the runtime would lose their executable bit.
+            mode = (info.external_attr >> 16) & 0o777
+            if sys.platform != "win32" and mode:
+                os.chmod(target, mode)
     missing = [path for path in REQUIRED if not (staged / path).is_file()]
     if missing:
         raise UpdateError("The package is incomplete: " + ", ".join(missing))
