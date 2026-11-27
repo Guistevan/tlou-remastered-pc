@@ -1035,9 +1035,12 @@ static ABI void submit_fire_point_light(void *lights, void *view, const unsigned
         const int barrel = barrel_palette && light_type == 1 && radius >= 0.8f;
         const int barrel_fill = barrel_palette && light_type == 3 &&
             radius >= 0.30f && radius <= 0.55f;
+        /* Tommy's Dam uses two authored palettes for the same kerosene prop. */
         const int kerosene_lantern = light_type == 1 && radius == 2.0f &&
-            fabsf(color[0] - 1.3f) < 0.0001f && fabsf(color[1] - 0.8717f) < 0.0001f &&
-            fabsf(color[2] - 0.4f) < 0.0001f;
+            ((fabsf(color[0] - 1.3f) < 0.0001f && fabsf(color[1] - 0.8717f) < 0.0001f &&
+              fabsf(color[2] - 0.4f) < 0.0001f) ||
+             (fabsf(color[0] - 1.0f) < 0.0001f && fabsf(color[1] - 0.758f) < 0.0001f &&
+              fabsf(color[2] - 0.5f) < 0.0001f));
         const int promote = molotov || barrel || kerosene_lantern;
         if (trace_fire_shadow_selection && color[0] > 0.0f &&
             color[1] > color[0] * 0.3f && color[1] < color[0] * 0.99f &&
@@ -1113,7 +1116,6 @@ static ABI void *submit_anchored_shadows_for_view(void *view) {
         {-14.13782f, 14.00100f, 108.41077f},
         /* Tommy's Dam kerosene placements without a matching authored point light.
          * The live emitters at the other lanterns are handled by the classifier. */
-        {-8.20258f, -5.87170f, -10.73624f}, /* pump room, lantern 4 */
         {-3.89210f,  6.31069f,  -4.48367f}, /* pump room, lantern 5 */
         {-74.06360f, 4.62890f, -27.98560f}, /* turbine hall, lantern 8 */
         {-3.99498f, 14.24042f, 103.55309f},
