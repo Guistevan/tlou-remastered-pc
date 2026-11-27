@@ -1111,6 +1111,11 @@ static ABI void *submit_anchored_shadows_for_view(void *view) {
         {-14.76446f, 14.00497f, 147.36974f},
         {-14.60017f, 14.00497f, 159.20061f},
         {-14.13782f, 14.00100f, 108.41077f},
+        /* Tommy's Dam kerosene placements without a matching authored point light.
+         * The live emitters at the other lanterns are handled by the classifier. */
+        {-8.20258f, -5.87170f, -10.73624f}, /* pump room, lantern 4 */
+        {-3.89210f,  6.31069f,  -4.48367f}, /* pump room, lantern 5 */
+        {-74.06360f, 4.62890f, -27.98560f}, /* turbine hall, lantern 8 */
         {-3.99498f, 14.24042f, 103.55309f},
         {12.35914f, 14.00100f, 97.76421f},
         {15.77726f, 14.00562f, 102.62310f},
